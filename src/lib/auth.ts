@@ -51,7 +51,7 @@ export async function getSession(): Promise<SessionUser | null> {
     const { payload } = await jwtVerify(token, secret());
     await ensureSchema();
     const result = await getDb().execute({
-      sql: "SELECT id, name, email, role, status FROM users WHERE id = ?",
+      sql: "SELECT id, name, email, phone_number, role, status FROM users WHERE id = ?",
       args: [String(payload.sub)],
     });
     const row = result.rows[0];
@@ -60,6 +60,7 @@ export async function getSession(): Promise<SessionUser | null> {
       id: String(row.id),
       name: String(row.name),
       email: String(row.email),
+      phone_number: String(row.phone_number),
       role: row.role as Role,
       status: row.status as UserStatus,
     };

@@ -3,6 +3,7 @@ export type UserStatus = "pending" | "approved" | "rejected";
 export type RideStatus = "open" | "full" | "completed" | "cancelled";
 export type BookingStatus =
   | "pending"
+  | "offered"
   | "accepted"
   | "rejected"
   | "completed"
@@ -13,6 +14,7 @@ export type SessionUser = {
   id: string;
   name: string;
   email: string;
+  phone_number: string;
   role: Role;
   status: UserStatus;
 };
@@ -41,18 +43,23 @@ export type RideRecord = {
 
 export type BookingRecord = {
   id: string;
-  ride_id: string;
+  ride_id: string | null;
+  driver_id: string | null;
   passenger_id: string;
   status: BookingStatus;
+  quoted_price: number | null; // Malaysian sen.
   payment_method: PaymentMethod;
   created_at: string;
   updated_at: string;
   passenger_name?: string;
   passenger_email?: string;
+  passenger_phone?: string;
+  driver_phone?: string;
   passenger_student_number?: string;
-  from_zone?: string;
-  to_zone?: string;
-  departure_at?: string;
+  from_zone: string;
+  to_zone: string;
+  departure_at: string;
+  ride_status?: RideStatus | null;
   flat_rate?: number;
   driver_name?: string;
 };

@@ -16,6 +16,14 @@ export function handleError(error: unknown) {
   return jsonError(message, status);
 }
 
+export function normalizePhone(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .replace(/[\s()-]/g, "");
+}
+export function isValidPhone(phone: string) {
+  return /^\+?[0-9]{8,15}$/.test(phone);
+}
 export function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }

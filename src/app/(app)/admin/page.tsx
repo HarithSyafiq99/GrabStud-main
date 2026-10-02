@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Icon } from "@/components/Icon";
+import { ActionButton, ACTION_SUCCESS_MS } from "@/components/ActionButton";
+import { BookingProgress } from "@/components/BookingProgress";
+import { RouteLoading } from "@/components/RouteLoading";
 import { Notice, Stats, Empty } from "@/components/UI";
 import { api } from "@/lib/client";
 import type { UserRecord } from "@/lib/types";
@@ -17,6 +20,8 @@ export default function Admin() {
     [message, setMessage] = useState(""),
     [error, setError] = useState(false),
     [busy, setBusy] = useState(""),
+    [busyAction, setBusyAction] = useState(""),
+    [successful, setSuccessful] = useState(""),
     [loading, setLoading] = useState(true);
   const closeRef = useRef<HTMLButtonElement>(null);
   const load = useCallback(async () => {
@@ -48,7 +53,9 @@ export default function Admin() {
     return () => window.removeEventListener("keydown", key);
   }, [preview]);
   async function act(userId: string, action: string) {
+    if (busy) return;
     setBusy(userId);
+    setBusyAction(action);
     try {
       await api("/api/admin/users", {
         method: "PATCH",
@@ -60,12 +67,18 @@ export default function Admin() {
           : "Application declined. The student can submit updated documents.",
       );
       setError(false);
+      if (action === "approve") {
+        setSuccessful(userId);
+        await new Promise((resolve) => setTimeout(resolve, ACTION_SUCCESS_MS));
+      }
       await load();
     } catch (e) {
       setMessage((e as Error).message);
       setError(true);
     } finally {
       setBusy("");
+      setBusyAction("");
+      setSuccessful("");
     }
   }
   function doc(url: string | null, title: string) {
@@ -83,12 +96,23 @@ export default function Admin() {
     );
   }
   const filtered = users.filter((u) =>
-    `${u.name} ${u.email} ${u.student_number}`
+    `${u.name} ${u.email} ${u.phone_number} ${u.student_number}`
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
   return (
     <div>
+      <BookingProgress
+        active={!!busy}
+        success={!!successful}
+        label={
+          successful
+            ? "Student approved!"
+            : busyAction === "approve"
+              ? "Approving this student…"
+              : "Updating this application…"
+        }
+      />
       <div className="page-heading">
         <div>
           <span className="eyebrow">A COMMUNITY BUILT ON TRUST</span>
@@ -145,7 +169,7 @@ export default function Admin() {
         />
       </div>
       <div className="panel table-panel">
-        <table className="data-table">
+        <table className="data-table mobile-card-table">
           <thead>
             <tr>
               <th>STUDENT</th>
@@ -160,40 +184,52 @@ export default function Admin() {
             {!loading &&
               filtered.map((u) => (
                 <tr key={u.id}>
-                  <td>
+                  <td data-label="Student" className="mobile-card-title">
                     <div className="flex gap-3 items-center">
                       <span className="avatar">{u.name[0]}</span>
                       <div>
                         <p>{u.name}</p>
                         <small>
                           {u.student_number} · {u.email}
+                          <br />
+                          {u.phone_number || "Phone number not added"}
                         </small>
                       </div>
                     </div>
                   </td>
-                  <td className="capitalize muted">{u.role}</td>
-                  <td>{doc(u.student_id_doc, `${u.name} · Student ID`)}</td>
-                  <td>{doc(u.license_doc, `${u.name} · Driving license`)}</td>
-                  <td>
+                  <td data-label="Role" className="capitalize muted">
+                    {u.role}
+                  </td>
+                  <td data-label="Student ID">
+                    {doc(u.student_id_doc, `${u.name} · Student ID`)}
+                  </td>
+                  <td data-label="License">
+                    {doc(u.license_doc, `${u.name} · Driving license`)}
+                  </td>
+                  <td data-label="Status">
                     <StatusBadge status={u.status} />
                   </td>
-                  <td>
+                  <td data-label="Review" className="mobile-card-actions">
                     {u.status === "pending" ? (
                       <div className="action-group">
-                        <button
-                          className="btn btn-success"
+                        <ActionButton
+                          loadingLabel="Approving…"
+                          successLabel="Approved!"
+                          pending={busy === u.id && busyAction === "approve"}
+                          success={successful === u.id}
                           disabled={!!busy}
                           onClick={() => act(u.id, "approve")}
                         >
-                          <Icon name="check" size={12} />
                           Approve
-                        </button>
+                        </ActionButton>
                         <button
                           className="btn btn-secondary"
                           disabled={!!busy}
                           onClick={() => act(u.id, "reject")}
                         >
-                          Decline
+                          {busy === u.id && busyAction === "reject"
+                            ? "Declining…"
+                            : "Decline"}
                         </button>
                       </div>
                     ) : (
@@ -205,7 +241,7 @@ export default function Admin() {
           </tbody>
         </table>
         {loading ? (
-          <div className="skeleton m-5" />
+          <RouteLoading label="Loading student approvals…" />
         ) : !filtered.length ? (
           <Empty
             title="All clear here."

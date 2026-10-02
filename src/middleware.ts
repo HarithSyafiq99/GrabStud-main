@@ -23,11 +23,23 @@ export async function middleware(request: NextRequest) {
 
   if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) {
     const origin = request.headers.get("origin");
-    if (origin && origin !== request.nextUrl.origin)
-      return NextResponse.json(
-        { error: "Invalid request origin." },
-        { status: 403 },
-      );
+    if (origin) {
+      let sameOrigin = false;
+      try {
+        // NextURL normalizes loopback IPs to localhost. Preserve the browser's
+        // actual host so valid local/LAN submissions pass the origin check.
+        const host = request.headers.get("host") ?? request.nextUrl.host;
+        const expected = new URL(`${request.nextUrl.protocol}//${host}`).origin;
+        sameOrigin = new URL(origin).origin === expected;
+      } catch {
+        // Opaque or malformed origins are not same-origin browser requests.
+      }
+      if (!sameOrigin)
+        return NextResponse.json(
+          { error: "Invalid request origin." },
+          { status: 403 },
+        );
+    }
   }
   const token = request.cookies.get("gs_session")?.value;
 

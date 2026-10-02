@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     const tab = searchParams.get("tab") ?? "pending";
     const db = getDb();
 
-    let sql = `SELECT id, name, email, student_number, role, status, student_id_doc, license_doc, created_at
+    let sql = `SELECT id, name, email, phone_number, student_number, role, status, student_id_doc, license_doc, created_at
                FROM users WHERE role != 'admin'`;
     const args: string[] = [];
     if (tab === "pending") {

@@ -1,7 +1,8 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { Icon } from "@/components/Icon";
 import { Notice, Empty } from "@/components/UI";
+import { RouteLoading } from "@/components/RouteLoading";
+import { DownloadButton } from "@/components/DownloadButton";
 import { api, rideDate, rideTime } from "@/lib/client";
 import type { AuditLog } from "@/lib/types";
 export default function Logs() {
@@ -36,10 +37,12 @@ export default function Logs() {
           <h1 className="mt-2">Community activity.</h1>
           <p>An audit trail of sign-ins, approvals, rides, and bookings.</p>
         </div>
-        <a className="btn btn-secondary" href="/api/reports/logs">
-          <Icon name="file" size={15} />
+        <DownloadButton
+          url="/api/reports/logs"
+          filename="grabstudent-audit-logs.csv"
+        >
           Export CSV
-        </a>
+        </DownloadButton>
       </div>
       <div className="table-tools">
         <input
@@ -55,7 +58,7 @@ export default function Logs() {
       </div>
       <Notice message={error} error />
       <div className="panel table-panel">
-        <table className="data-table">
+        <table className="data-table mobile-card-table">
           <thead>
             <tr>
               <th>WHEN · MYT</th>
@@ -67,17 +70,20 @@ export default function Logs() {
           <tbody>
             {filtered.map((l) => (
               <tr key={l.id}>
-                <td>
+                <td data-label="When · MYT">
                   {rideDate(l.created_at)}
                   <small>{rideTime(l.created_at)}</small>
                 </td>
-                <td>
+                <td data-label="Activity">
                   <span className="status bg-lilac/40 text-lilac-deep">
                     {l.action.toLowerCase().replaceAll("_", " ")}
                   </span>
                 </td>
-                <td>{l.actor_name ?? "System"}</td>
-                <td className="whitespace-normal min-w-64 text-[#9c88b0] leading-6">
+                <td data-label="Student">{l.actor_name ?? "System"}</td>
+                <td
+                  data-label="Details"
+                  className="mobile-card-details whitespace-normal min-w-64 text-[#9c88b0] leading-6"
+                >
                   {l.details}
                 </td>
               </tr>
@@ -85,7 +91,7 @@ export default function Logs() {
           </tbody>
         </table>
         {loading ? (
-          <div className="skeleton m-5" />
+          <RouteLoading label="Loading community activity…" />
         ) : !filtered.length ? (
           <Empty
             title="Nothing to display."

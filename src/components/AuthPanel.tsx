@@ -24,7 +24,7 @@ export function AuthPanel() {
             <Icon name="shield" size={17} /> Student verified
           </span>
           <span>
-            <Icon name="wallet" size={17} /> Fair, fixed rates
+            <Icon name="wallet" size={17} /> Agree before you book
           </span>
         </div>
       </div>

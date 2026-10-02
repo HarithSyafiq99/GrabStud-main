@@ -1,7 +1,8 @@
 "use client";
-import Link from "next/link";
+import { LoadingLink as Link } from "@/components/LoadingLink";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, useTransition } from "react";
+import { BookingProgress } from "@/components/BookingProgress";
 import { AuthPanel } from "@/components/AuthPanel";
 import { Brand } from "@/components/Brand";
 import { Icon } from "@/components/Icon";
@@ -9,6 +10,7 @@ import { Notice } from "@/components/UI";
 import { api } from "@/lib/client";
 export default function LoginPage() {
   const router = useRouter();
+  const [navigating, startNavigation] = useTransition();
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
     [show, setShow] = useState(false),
@@ -16,6 +18,7 @@ export default function LoginPage() {
     [busy, setBusy] = useState(false);
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (busy || navigating) return;
     setBusy(true);
     setError("");
     try {
@@ -23,8 +26,10 @@ export default function LoginPage() {
         method: "POST",
         body: JSON.stringify({ email, password }),
       });
-      router.push(data.redirect);
-      router.refresh();
+      startNavigation(() => {
+        router.push(data.redirect);
+        router.refresh();
+      });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -33,6 +38,10 @@ export default function LoginPage() {
   }
   return (
     <div className="auth-layout">
+      <BookingProgress
+        active={busy || navigating}
+        label={navigating ? "Opening your dashboard…" : "Signing you in…"}
+      />
       <AuthPanel />
       <section className="auth-form-side">
         <form className="auth-form" onSubmit={submit}>
@@ -51,7 +60,7 @@ export default function LoginPage() {
               type="email"
               autoComplete="email"
               required
-              placeholder="you@university.edu"
+              placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
@@ -72,14 +81,17 @@ export default function LoginPage() {
                 type="button"
                 aria-label={show ? "Hide password" : "Show password"}
                 onClick={() => setShow(!show)}
-                className="absolute right-3 top-3 text-[#aa98bc]"
+                className="password-toggle absolute right-1 top-0 text-[#aa98bc]"
               >
                 <Icon name="eye" size={19} />
               </button>
             </div>
           </label>
           <Notice message={error} error />
-          <button className="btn btn-primary w-full mt-6" disabled={busy}>
+          <button
+            className="btn btn-primary w-full mt-6"
+            disabled={busy || navigating}
+          >
             {busy ? "Signing you in…" : "Sign in"}
             <Icon name="arrow" size={16} />
           </button>
@@ -95,7 +107,7 @@ export default function LoginPage() {
                     type="button"
                     key={role}
                     onClick={() => {
-                      setEmail(`${role}@grabstudent.edu`);
+                      setEmail(`${role}@grabstudent.com`);
                       setPassword(
                         role === "admin" ? "Admin123!" : "Student123!",
                       );

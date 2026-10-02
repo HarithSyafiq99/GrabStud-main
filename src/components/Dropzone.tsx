@@ -2,6 +2,7 @@
 "use client";
 import { useCallback, useId, useState } from "react";
 import { Icon } from "./Icon";
+import { beginLoading } from "@/lib/loading";
 type Props = {
   label: string;
   hint?: string;
@@ -31,6 +32,7 @@ export function Dropzone({ label, hint, required, onFile }: Props) {
         return;
       }
       const reader = new FileReader();
+      const finish = beginLoading(`Reading your ${label.toLowerCase()}…`);
       reader.onload = () => {
         const value = String(reader.result);
         setPreview(file.type.startsWith("image/") ? value : null);
@@ -38,15 +40,23 @@ export function Dropzone({ label, hint, required, onFile }: Props) {
         onFile(value);
       };
       reader.onerror = () => setError("Could not read this file. Try again.");
-      reader.readAsDataURL(file);
+      reader.onabort = () => setError("File reading was cancelled. Try again.");
+      reader.onloadend = finish;
+      try {
+        reader.readAsDataURL(file);
+      } catch {
+        finish();
+        setError("Could not read this file. Try again.");
+      }
     },
-    [onFile],
+    [onFile, label],
   );
   return (
     <div>
       <label
         htmlFor={id}
         className={`upload-zone ${drag ? "drag" : ""}`}
+        data-uploaded={!!name}
         onDragOver={(e) => {
           e.preventDefault();
           setDrag(true);

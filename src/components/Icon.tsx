@@ -48,6 +48,7 @@ export function Icon({
       className={className}
       style={style}
       aria-hidden="true"
+      data-icon={name}
     >
       <path d={paths[name] ?? paths.car} />
     </svg>

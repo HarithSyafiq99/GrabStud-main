@@ -8,6 +8,7 @@ export function Notice({
 }) {
   return message ? (
     <div
+      key={`${error}-${message}`}
       className={`notice ${error ? "error" : ""}`}
       role={error ? "alert" : "status"}
     >
@@ -48,7 +49,9 @@ export function Stats({
             <Icon name={i.icon} />
           </span>
           <div>
-            <strong>{i.value}</strong>
+            <strong className="stat-value" key={String(i.value)}>
+              {i.value}
+            </strong>
             <p>{i.label}</p>
           </div>
         </div>

@@ -46,7 +46,7 @@ export async function PATCH(
         args: [status, id],
       });
       await tx.execute({
-        sql: "UPDATE bookings SET status=CASE WHEN status='accepted' THEN ? ELSE 'cancelled' END, updated_at=? WHERE ride_id=? AND status IN ('pending','accepted')",
+        sql: "UPDATE bookings SET status=CASE WHEN status='accepted' THEN ? ELSE 'cancelled' END, updated_at=? WHERE ride_id=? AND status IN ('pending','offered','accepted')",
         args: [status, now, id],
       });
       await tx.execute({

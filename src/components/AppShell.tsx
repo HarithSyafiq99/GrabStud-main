@@ -1,24 +1,65 @@
 "use client";
-import Link from "next/link";
+import { LoadingLink as Link } from "./LoadingLink";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { BookingProgress } from "./BookingProgress";
+import { lockPageScroll } from "@/lib/loading";
+import { PhoneSettings } from "./PhoneSettings";
 import { Brand } from "./Brand";
 import { Icon } from "./Icon";
 import { api } from "@/lib/client";
 import type { SessionUser } from "@/lib/types";
-const NAV: Record<string, { href: string; label: string; icon: string }[]> = {
+const NAV: Record<
+  string,
+  { href: string; label: string; mobileLabel: string; icon: string }[]
+> = {
   passenger: [
-    { href: "/passenger", label: "Find a ride", icon: "search" },
-    { href: "/history", label: "My bookings", icon: "history" },
+    {
+      href: "/passenger",
+      label: "Request a journey",
+      mobileLabel: "Book a ride",
+      icon: "plus",
+    },
+    {
+      href: "/history",
+      label: "My bookings",
+      mobileLabel: "My bookings",
+      icon: "history",
+    },
   ],
   driver: [
-    { href: "/driver", label: "Driver hub", icon: "car" },
-    { href: "/history", label: "Ride history", icon: "history" },
+    {
+      href: "/driver",
+      label: "Driver hub",
+      mobileLabel: "Passengers",
+      icon: "car",
+    },
+    {
+      href: "/history",
+      label: "Ride history",
+      mobileLabel: "History",
+      icon: "history",
+    },
   ],
   admin: [
-    { href: "/admin", label: "Student approvals", icon: "shield" },
-    { href: "/admin/logs", label: "System activity", icon: "history" },
-    { href: "/history", label: "All bookings", icon: "car" },
+    {
+      href: "/admin",
+      label: "Student approvals",
+      mobileLabel: "Approvals",
+      icon: "shield",
+    },
+    {
+      href: "/admin/logs",
+      label: "System activity",
+      mobileLabel: "Activity",
+      icon: "history",
+    },
+    {
+      href: "/history",
+      label: "All bookings",
+      mobileLabel: "Bookings",
+      icon: "car",
+    },
   ],
 };
 export function AppShell({
@@ -31,13 +72,67 @@ export function AppShell({
   const pathname = usePathname(),
     router = useRouter();
   const [open, setOpen] = useState(false),
+    [mobile, setMobile] = useState(false),
     [notifications, setNotifications] = useState(false),
-    [counts, setCounts] = useState({ pendingRequests: 0, acceptedBookings: 0 }),
+    [counts, setCounts] = useState({
+      pendingRequests: 0,
+      acceptedBookings: 0,
+      priceOffers: 0,
+    }),
     [error, setError] = useState("");
+  const [signingOut, setSigningOut] = useState(false);
+  const [navigating, startNavigation] = useTransition();
+  const sidebarRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 900px)");
+    const update = () => {
+      setMobile(query.matches);
+      if (!query.matches) setOpen(false);
+    };
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    if (!open || !mobile) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const releaseScroll = lockPageScroll();
+    const focusFrame = requestAnimationFrame(() => {
+      sidebarRef.current
+        ?.querySelector<HTMLButtonElement>(".sidebar-close")
+        ?.focus({ preventScroll: true });
+    });
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+      if (event.key !== "Tab") return;
+      const items = sidebarRef.current?.querySelectorAll<HTMLElement>(
+        'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex="0"]',
+      );
+      const visible = Array.from(items ?? []).filter(
+        (item) => item.getClientRects().length,
+      );
+      const first = visible[0],
+        last = visible[visible.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      cancelAnimationFrame(focusFrame);
+      releaseScroll();
+      document.removeEventListener("keydown", handleKey);
+      previousFocus?.focus();
+    };
+  }, [open, mobile]);
   useEffect(() => {
     if (user.role === "admin") return;
     const load = () =>
-      api<typeof counts>("/api/notifications")
+      api<typeof counts>("/api/notifications", { feedback: "background" })
         .then(setCounts)
         .catch(() => {});
     load();
@@ -45,16 +140,26 @@ export function AppShell({
     return () => clearInterval(id);
   }, [user.role, pathname]);
   async function logout() {
+    if (signingOut || navigating) return;
+    setSigningOut(true);
     try {
       await api("/api/auth/logout", { method: "POST" });
-      router.push("/login");
-      router.refresh();
+      startNavigation(() => {
+        router.push("/login");
+        router.refresh();
+      });
     } catch {
       setError("Could not sign out. Please try again.");
+    } finally {
+      setSigningOut(false);
     }
   }
   return (
     <div className="app-shell">
+      <BookingProgress
+        active={signingOut || navigating}
+        label="Signing you out…"
+      />
       {open ? (
         <button
           className="mobile-overlay"
@@ -62,10 +167,27 @@ export function AppShell({
           onClick={() => setOpen(false)}
         />
       ) : null}
-      <aside className={`sidebar ${open ? "open" : ""}`}>
-        <Link href={NAV[user.role][0].href}>
-          <Brand />
-        </Link>
+      <aside
+        id="app-navigation"
+        ref={sidebarRef}
+        className={`sidebar ${open ? "open" : ""}`}
+        inert={mobile && !open}
+        role={mobile && open ? "dialog" : undefined}
+        aria-modal={mobile && open ? true : undefined}
+        aria-label="Account and navigation"
+      >
+        <div className="sidebar-heading">
+          <Link href={NAV[user.role][0].href} onClick={() => setOpen(false)}>
+            <Brand />
+          </Link>
+          <button
+            className="icon-btn sidebar-close"
+            aria-label="Close navigation"
+            onClick={() => setOpen(false)}
+          >
+            <Icon name="close" size={18} />
+          </button>
+        </div>
         <p className="nav-caption">YOUR CAMPUS, CONNECTED</p>
         <nav>
           {NAV[user.role].map((item) => (
@@ -99,7 +221,11 @@ export function AppShell({
               <p>{user.name}</p>
               <small>{user.role} account</small>
             </div>
-            <button onClick={logout} aria-label="Sign out">
+            <button
+              onClick={logout}
+              aria-label="Sign out"
+              disabled={signingOut || navigating}
+            >
               <Icon name="logout" size={16} />
             </button>
           </div>
@@ -116,10 +242,18 @@ export function AppShell({
             className="icon-btn mobile-menu"
             aria-label="Open navigation"
             aria-expanded={open}
+            aria-controls="app-navigation"
             onClick={() => setOpen(true)}
           >
             <Icon name="menu" />
           </button>
+          <Link
+            className="mobile-brand"
+            href={NAV[user.role][0].href}
+            aria-label="GrabStudent home"
+          >
+            <Brand />
+          </Link>
           <div className="topbar-location">
             <Icon name="pin" size={15} />
             <strong>Campus community</strong>
@@ -144,7 +278,9 @@ export function AppShell({
                 onClick={() => setNotifications(!notifications)}
               >
                 <Icon name="bell" size={18} />
-                {counts.pendingRequests > 0 || counts.acceptedBookings > 0 ? (
+                {counts.pendingRequests > 0 ||
+                counts.acceptedBookings > 0 ||
+                counts.priceOffers > 0 ? (
                   <span className="notification-dot" />
                 ) : null}
               </button>
@@ -154,13 +290,19 @@ export function AppShell({
                   <p>
                     {user.role === "admin"
                       ? "Review student documents and monitor activity in your admin dashboard."
-                      : `${counts.pendingRequests} pending ${user.role === "driver" ? "requests" : "bookings"} · ${counts.acceptedBookings} accepted bookings. Payment is arranged with the driver in cash or QR.`}
+                      : `${counts.pendingRequests} pending ${user.role === "driver" ? "requests" : "bookings"} · ${counts.priceOffers} price offers awaiting agreement; ${counts.acceptedBookings} booked seats. Payment is arranged with the driver in cash or QR.`}
                   </p>
                   <Link
                     onClick={() => setNotifications(false)}
-                    href={user.role === "admin" ? "/admin" : "/history"}
+                    href={
+                      user.role === "admin"
+                        ? "/admin"
+                        : user.role === "driver"
+                          ? "/driver"
+                          : "/passenger"
+                    }
                   >
-                    View {user.role === "admin" ? "approvals" : "bookings"} →
+                    View {user.role === "admin" ? "approvals" : "requests"} →
                   </Link>
                 </div>
               ) : null}
@@ -169,6 +311,9 @@ export function AppShell({
           </div>
         </header>
         <main className="main-content" key={pathname}>
+          <div className="contact-toolbar flex justify-end mb-4">
+            <PhoneSettings initialPhone={user.phone_number} />
+          </div>
           {children}
           <footer className="app-footer">
             <span>
@@ -179,6 +324,30 @@ export function AppShell({
           </footer>
         </main>
       </div>
+      <nav className="mobile-bottom-nav" aria-label="Mobile primary navigation">
+        {NAV[user.role].map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={pathname === item.href ? "active" : ""}
+            aria-current={pathname === item.href ? "page" : undefined}
+            onClick={() => setOpen(false)}
+          >
+            <Icon name={item.icon} size={21} />
+            <span>{item.mobileLabel}</span>
+          </Link>
+        ))}
+        <button
+          type="button"
+          aria-label="Open account menu"
+          aria-expanded={open}
+          aria-controls="app-navigation"
+          onClick={() => setOpen(true)}
+        >
+          <Icon name="users" size={21} />
+          <span>Account</span>
+        </button>
+      </nav>
     </div>
   );
 }

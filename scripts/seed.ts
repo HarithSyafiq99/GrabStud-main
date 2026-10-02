@@ -1,6 +1,6 @@
 import { hash } from "bcryptjs";
 import { createClient } from "@libsql/client";
-import { SCHEMA_SQL } from "../src/lib/schema";
+import { initializeSchema } from "../src/lib/migrations";
 import { loadEnvLocal, resolveSqliteUrl } from "./env";
 
 loadEnvLocal();
@@ -12,14 +12,9 @@ async function main() {
     authToken: process.env.TURSO_AUTH_TOKEN || undefined,
   });
 
-  const statements = SCHEMA_SQL.split(";")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0 && !s.startsWith("--"));
-  for (const statement of statements) {
-    await db.execute(statement);
-  }
+  await initializeSchema(db);
 
-  const adminEmail = process.env.ADMIN_EMAIL || "admin@grabstudent.edu";
+  const adminEmail = process.env.ADMIN_EMAIL || "admin@grabstudent.com";
   const adminPassword =
     process.env.ADMIN_PASSWORD ||
     (process.env.NODE_ENV !== "production" && url.startsWith("file:")
@@ -29,6 +24,12 @@ async function main() {
     throw new Error(
       "Set ADMIN_PASSWORD (8+ characters) before seeding a remote or production database.",
     );
+  if (url.startsWith("file:") && adminEmail === "admin@grabstudent.com") {
+    await db.execute({
+      sql: "UPDATE users SET email=? WHERE email=? AND role='admin' AND NOT EXISTS (SELECT 1 FROM users WHERE email=?)",
+      args: [adminEmail, "admin@grabstudent.edu", adminEmail],
+    });
+  }
   const existing = await db.execute({
     sql: "SELECT id FROM users WHERE email = ?",
     args: [adminEmail],

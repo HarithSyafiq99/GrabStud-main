@@ -43,3 +43,7 @@ yarn-error.log*
 /data/*.db
 /data/*.db-shm
 /data/*.db-wal
+
+# isolated test and build output
+/.next-test/
+/.next-build/

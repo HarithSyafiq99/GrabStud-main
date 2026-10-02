@@ -10,7 +10,7 @@
     "db:init": "node --import tsx scripts/init-db.ts",
     "db:seed": "node --import tsx scripts/seed.ts",
     "db:demo": "npm run db:seed && node --import tsx scripts/demo.ts",
-    "test": "node --test tests/integration.mjs",
+    "test": "node --expose-gc --import tsx --test tests/integration.mjs tests/migrations.ts",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write src scripts tests next.config.ts eslint.config.mjs README.md PANDUAN_MULA.md"
   },

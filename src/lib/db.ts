@@ -1,10 +1,10 @@
 import { createClient, type Client } from "@libsql/client";
 import { mkdirSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
-import { SCHEMA_SQL } from "./schema";
+import { initializeSchema } from "./migrations";
 
 let client: Client | null = null;
-let initialized = false;
+let initialization: Promise<void> | null = null;
 
 function resolveUrl() {
   const url = process.env.TURSO_DATABASE_URL ?? "file:./data/grabstudent.db";
@@ -34,15 +34,13 @@ export function getDb(): Client {
 }
 
 export async function ensureSchema() {
-  if (initialized) return;
-  const db = getDb();
-  const statements = SCHEMA_SQL.split(";")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0 && !s.startsWith("--"));
-  for (const statement of statements) {
-    await db.execute(statement);
+  if (!initialization) {
+    initialization = initializeSchema(getDb()).catch((error) => {
+      initialization = null;
+      throw error;
+    });
   }
-  initialized = true;
+  await initialization;
 }
 
 export function newId() {

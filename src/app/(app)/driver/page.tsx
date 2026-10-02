@@ -2,97 +2,157 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Icon } from "@/components/Icon";
+import { ACTION_SUCCESS_MS } from "@/components/ActionButton";
+import { BookingProgress } from "@/components/BookingProgress";
+import { RouteLoading } from "@/components/RouteLoading";
+import { FareOfferForm } from "@/components/FareOfferForm";
 import { Notice, Stats, Empty } from "@/components/UI";
 import { ZONES, getFlatRate } from "@/lib/zones";
-import { api, localDateTime, rideDate, rideTime } from "@/lib/client";
-import type { BookingRecord, RideRecord } from "@/lib/types";
+import { api, rideDate, rideTime } from "@/lib/client";
+import type { BookingRecord } from "@/lib/types";
 export default function Driver() {
-  const [from, setFrom] = useState<string>(ZONES[0]),
-    [to, setTo] = useState<string>(ZONES[7]),
-    [departure, setDeparture] = useState(""),
-    [seats, setSeats] = useState(2),
-    [rides, setRides] = useState<RideRecord[]>([]),
-    [bookings, setBookings] = useState<BookingRecord[]>([]),
+  const [from, setFrom] = useState(""),
+    [to, setTo] = useState(""),
+    [date, setDate] = useState(""),
+    [filters, setFilters] = useState(""),
+    [available, setAvailable] = useState<BookingRecord[]>([]),
+    [mine, setMine] = useState<BookingRecord[]>([]),
+    [loading, setLoading] = useState(true),
+    [busy, setBusy] = useState(""),
+    [busyLabel, setBusyLabel] = useState(""),
+    [successful, setSuccessful] = useState(""),
     [message, setMessage] = useState(""),
     [error, setError] = useState(false),
-    [busy, setBusy] = useState(""),
-    [loading, setLoading] = useState(true),
-    [confirm, setConfirm] = useState<string | null>(null);
-  const load = useCallback(async () => {
-    try {
-      const [r, b] = await Promise.all([
-        api<{ rides: RideRecord[] }>("/api/rides?mine=1"),
-        api<{ bookings: BookingRecord[] }>("/api/bookings"),
-      ]);
-      setRides(r.rides);
-      setBookings(b.bookings);
-    } catch (e) {
-      setMessage((e as Error).message);
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    [cancel, setCancel] = useState<string | null>(null);
+  const load = useCallback(
+    async (background = false) => {
+      const feedback = background ? "background" : "blocking";
+      try {
+        const [requests, assigned] = await Promise.all([
+          api<{ bookings: BookingRecord[] }>("/api/bookings?" + filters, {
+            feedback,
+          }),
+          api<{ bookings: BookingRecord[] }>("/api/bookings?mine=1", {
+            feedback,
+          }),
+        ]);
+        setAvailable(requests.bookings);
+        setMine(assigned.bookings.filter((b) => b.status !== "pending"));
+      } catch (e) {
+        setMessage((e as Error).message);
+        setError(true);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [filters],
+  );
   useEffect(() => {
     load();
-    const id = setInterval(load, 20000);
-    return () => clearInterval(id);
+    const timer = setInterval(() => load(true), 20000);
+    return () => clearInterval(timer);
   }, [load]);
-  async function create(e: FormEvent) {
+  function filter(e: FormEvent) {
     e.preventDefault();
-    setBusy("create");
+    const query = new URLSearchParams();
+    if (from) query.set("from", from);
+    if (to) query.set("to", to);
+    if (date) query.set("date", date);
+    if (query.toString() === filters) load();
+    else {
+      setLoading(true);
+      setFilters(query.toString());
+    }
+  }
+  async function action(id: string, kind: string, price?: number) {
+    if (busy) return;
+    if (kind === "accept" && price == null) return;
+    setBusy(id);
+    setBusyLabel(
+      kind === "accept"
+        ? "Sending your price offer…"
+        : kind === "withdraw"
+          ? "Withdrawing your offer…"
+          : kind === "complete"
+            ? "Completing this journey…"
+            : "Cancelling this booking…",
+    );
     setMessage("");
     try {
-      await api("/api/rides", {
-        method: "POST",
+      await api("/api/bookings/" + id, {
+        method: "PATCH",
         body: JSON.stringify({
-          from_zone: from,
-          to_zone: to,
-          departure_at: departure ? `${departure}:00+08:00` : "",
-          seats_total: seats,
+          action: kind,
+          ...(kind === "accept" ? { price } : {}),
         }),
       });
-      setMessage("Your ride is live. Let’s get campus moving!");
-      setError(false);
-      setDeparture("");
-      await load();
-    } catch (e) {
-      setMessage((e as Error).message);
-      setError(true);
-    } finally {
-      setBusy("");
-    }
-  }
-  async function action(kind: "booking" | "ride", id: string, action: string) {
-    setBusy(id);
-    try {
-      await api(`/api/${kind === "booking" ? "bookings" : "rides"}/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ action }),
-      });
       setMessage(
-        action === "accept"
-          ? "Seat confirmed. The passenger can now see your acceptance."
-          : `Successfully ${action === "complete" ? "completed" : action === "cancel" ? "cancelled" : "rejected"}.`,
+        kind === "accept"
+          ? "Passenger selected and price sent. Wait for their agreement."
+          : kind === "withdraw"
+            ? "Your offer was withdrawn. Other drivers can choose this request."
+            : kind === "complete"
+              ? "Journey completed."
+              : "Booking cancelled.",
       );
       setError(false);
-      setConfirm(null);
+      setCancel(null);
+      if (kind === "accept") {
+        setSuccessful(id);
+        await new Promise((resolve) => setTimeout(resolve, ACTION_SUCCESS_MS));
+      }
       await load();
     } catch (e) {
       setMessage((e as Error).message);
       setError(true);
+      await load();
     } finally {
       setBusy("");
+      setSuccessful("");
     }
   }
-  const active = rides.filter((r) => ["open", "full"].includes(r.status));
+  function info(b: BookingRecord) {
+    return (
+      <div className="booking-info">
+        <span className="avatar">{b.passenger_name?.[0]}</span>
+        <div>
+          <h3>{b.passenger_name}</h3>
+          <p className="text-xs muted">
+            {b.from_zone} to <strong>{b.to_zone}</strong>
+            <br />
+            {rideDate(b.departure_at)} at {rideTime(b.departure_at)}
+            <br />
+            {b.passenger_email} - {b.payment_method.toUpperCase()}
+          </p>
+          {b.passenger_phone ? (
+            <a
+              className="text-xs text-lilac-deep"
+              href={"tel:" + b.passenger_phone}
+            >
+              {b.passenger_phone}
+            </a>
+          ) : (
+            <p className="text-xs muted">Phone number not added</p>
+          )}
+        </div>
+      </div>
+    );
+  }
   return (
     <div>
+      <BookingProgress
+        active={!!busy}
+        label={successful ? "Price offer sent!" : busyLabel}
+        success={!!successful}
+      />
       <div className="page-heading">
         <div>
-          <span className="eyebrow">MAKE ROOM FOR GOOD COMPANY</span>
-          <h1 className="mt-2">Your driver hub.</h1>
-          <p>Going somewhere? Take your campus community with you.</p>
+          <span className="eyebrow">CHOOSE A JOURNEY TO SHARE</span>
+          <h1 className="mt-2">Choose your passengers.</h1>
+          <p>
+            Find passenger requests going to your destination, choose who to
+            take, and offer your price.
+          </p>
         </div>
         <span className="status bg-emerald-50 text-emerald-700">
           Verified driver
@@ -100,271 +160,219 @@ export default function Driver() {
       </div>
       <Stats
         items={[
-          { label: "Active rides", value: active.length, icon: "car" },
           {
-            label: "Requests to review",
-            value: bookings.length,
+            label: "Matching requests",
+            value: available.length,
             icon: "users",
           },
           {
-            label: "Completed rides",
-            value: rides.filter((r) => r.status === "completed").length,
+            label: "Awaiting passenger agreement",
+            value: mine.filter((b) => b.status === "offered").length,
+            icon: "clock",
+          },
+          {
+            label: "Booked journeys",
+            value: mine.filter((b) => b.status === "accepted").length,
             icon: "check",
           },
         ]}
       />
       <Notice message={message} error={error} />
-      <div className="driver-layout">
-        <section className="panel create-panel">
-          <h2 className="section-title">Let’s post a ride.</h2>
-          <p className="section-subtitle">
-            Pick a route. We’ll take care of the fair price.
-          </p>
-          <form className="create-form" onSubmit={create}>
-            <label className="field">
-              PICK-UP
-              <select
-                className="input"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-              >
-                {ZONES.map((z) => (
-                  <option key={z}>{z}</option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              DESTINATION
-              <select
-                className="input"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-              >
-                {ZONES.map((z) => (
-                  <option key={z}>{z}</option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              DATE & TIME · MALAYSIA
-              <input
-                className="input"
-                type="datetime-local"
-                required
-                min={localDateTime()}
-                value={departure}
-                onChange={(e) => setDeparture(e.target.value)}
-              />
-            </label>
-            <label className="field">
-              AVAILABLE SEATS
-              <select
-                className="input"
-                value={seats}
-                onChange={(e) => setSeats(Number(e.target.value))}
-              >
-                {[1, 2, 3, 4].map((n) => (
-                  <option key={n} value={n}>
-                    {n} passenger{n > 1 ? "s" : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="rate-preview">
-              <div>
-                <p>One fair, fixed rate.</p>
-                <small>Per passenger · Cash or QR paid offline</small>
-              </div>
-              <strong>RM {getFlatRate(from, to).toFixed(2)}</strong>
-            </div>
-            <button
-              disabled={!!busy || from === to}
-              className="btn btn-primary col-span-full"
-            >
-              <Icon name="plus" size={16} />
-              {busy === "create" ? "Publishing…" : "Publish ride"}
-            </button>
-            {from === to ? (
-              <p className="text-xs text-rose-600 col-span-full">
-                Please choose different pick-up and destination zones.
-              </p>
-            ) : null}
-          </form>
-        </section>
-        <aside className="panel help-panel">
-          <Icon name="heart" size={26} className="text-[#ae93c9]" />
-          <h3>Be someone’s good ride.</h3>
-          <p className="section-subtitle leading-6">
-            A few simple steps to a smoother shared journey.
-          </p>
-          <ul>
-            <li>
-              <span className="number">1</span>Post your route and departure
-              time.
-            </li>
-            <li>
-              <span className="number">2</span>Accept requests to confirm their
-              seats.
-            </li>
-            <li>
-              <span className="number">3</span>Meet at pick-up. Collect cash or
-              QR payment directly.
-            </li>
-            <li>
-              <span className="number">4</span>Mark the ride complete after the
-              journey.
-            </li>
-          </ul>
-        </aside>
-      </div>
+      <form className="panel filter-panel" onSubmit={filter}>
+        <label className="field">
+          PICK-UP
+          <select
+            className="input"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+          >
+            <option value="">Any pickup</option>
+            {ZONES.map((z) => (
+              <option key={z}>{z}</option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          DESTINATION
+          <select
+            className="input"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+          >
+            <option value="">Any destination</option>
+            {ZONES.map((z) => (
+              <option key={z}>{z}</option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          DEPARTURE DATE
+          <input
+            className="input"
+            type="date"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </label>
+        <button className="btn btn-primary">
+          <Icon name="search" size={16} />
+          Find passengers
+        </button>
+      </form>
       <div className="section-row">
         <div>
-          <h2 className="section-title">
-            Booking requests{" "}
-            <span className="text-xs muted ml-2">{bookings.length}</span>
-          </h2>
+          <h2 className="section-title">Available passenger requests</h2>
           <p className="section-subtitle">
-            Someone’s counting on your next journey.
+            Only choose requests you can fulfil. The passenger confirms after
+            reviewing your fare.
           </p>
         </div>
-        <button className="text-xs text-lilac-deep" onClick={load}>
-          Refresh ↺
+        <button
+          className="text-xs text-lilac-deep"
+          onClick={() => {
+            setFrom("");
+            setTo("");
+            setDate("");
+            if (filters) setFilters("");
+            else load();
+          }}
+        >
+          Reset filters
         </button>
       </div>
       {loading ? (
-        <div className="skeleton" />
-      ) : bookings.length ? (
-        bookings.map((b) => (
+        <RouteLoading label="Loading passenger requests…" />
+      ) : available.length ? (
+        available.map((b) => (
           <article className="panel booking-item" key={b.id}>
-            <div className="booking-info">
-              <span className="avatar">{b.passenger_name?.[0]}</span>
-              <div>
-                <h3>{b.passenger_name}</h3>
-                <p>
-                  {b.passenger_student_number} · {b.passenger_email}
-                  <br />
-                  {b.from_zone} → {b.to_zone}
-                  <br />
-                  {rideDate(b.departure_at!)} · {rideTime(b.departure_at!)} · RM{" "}
-                  {b.flat_rate} · {b.payment_method.toUpperCase()}
-                </p>
-              </div>
-            </div>
-            <div className="action-group">
-              <button
-                className="btn btn-success"
-                disabled={!!busy}
-                onClick={() => action("booking", b.id, "accept")}
-              >
-                <Icon name="check" size={13} />
-                Accept
-              </button>
-              <button
-                className="btn btn-secondary"
-                disabled={!!busy}
-                onClick={() => action("booking", b.id, "reject")}
-              >
-                Reject
-              </button>
-            </div>
+            {info(b)}
+            <FareOfferForm
+              passengerName={b.passenger_name ?? "passenger"}
+              suggestedPrice={getFlatRate(b.from_zone, b.to_zone)}
+              disabled={!!busy}
+              pending={busy === b.id}
+              success={successful === b.id}
+              onOffer={(price) => action(b.id, "accept", price)}
+            />
           </article>
         ))
       ) : (
         <div className="panel">
           <Empty
-            title="All caught up."
-            text="New booking requests will appear here."
-            icon="check"
+            title="No matching requests yet."
+            text="Try another destination or check back for new passenger requests."
+            icon="users"
           />
         </div>
       )}
       <div className="section-row">
         <div>
-          <h2 className="section-title">My rides</h2>
+          <h2 className="section-title">My selected passengers</h2>
           <p className="section-subtitle">
-            Your routes, from upcoming to completed.
+            Your offers and confirmed bookings.
           </p>
         </div>
+        <button className="btn btn-secondary" onClick={() => load()}>
+          Refresh
+        </button>
       </div>
-      {rides.length ? (
-        rides
-          .slice()
-          .reverse()
-          .map((r) => (
-            <article className="panel my-ride" key={r.id}>
+      {mine.length ? (
+        mine.map((b) => {
+          const future = new Date(b.departure_at).getTime() > Date.now(),
+            live =
+              b.ride_id == null ||
+              ["open", "full"].includes(b.ride_status ?? "");
+          return (
+            <article className="panel booking-item" key={b.id}>
+              {info(b)}
               <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-xs font-semibold">
-                    {r.from_zone} → {r.to_zone}
-                  </h3>
-                  <StatusBadge status={r.status} />
-                </div>
-                <p className="text-[10px] muted mt-2">
-                  {rideDate(r.departure_at)} · {rideTime(r.departure_at)} ·{" "}
-                  {r.seats_available}/{r.seats_total} seats free · RM{" "}
-                  {r.flat_rate} per passenger
+                <StatusBadge status={b.status} />
+                <p className="text-xs mt-2">
+                  RM {(Number(b.quoted_price) / 100).toFixed(2)}
                 </p>
-              </div>
-              {["open", "full"].includes(r.status) ? (
-                <div className="action-group">
-                  <button
-                    className="btn btn-soft"
-                    disabled={
-                      !!busy || new Date(r.departure_at).getTime() > Date.now()
-                    }
-                    title="Available after departure time"
-                    onClick={() => action("ride", r.id, "complete")}
-                  >
-                    Complete ride
-                  </button>
-                  <button
-                    className="btn btn-secondary"
-                    disabled={!!busy}
-                    onClick={() => setConfirm(r.id)}
-                  >
-                    Cancel
-                  </button>
+                {b.status === "offered" ? (
+                  <p className="text-xs muted mt-2">
+                    Waiting for the passenger to agree to your price.
+                  </p>
+                ) : null}
+                <div className="action-group flex-wrap mt-3">
+                  {b.status === "offered" && future && live ? (
+                    <button
+                      className="btn btn-secondary"
+                      disabled={!!busy}
+                      onClick={() => action(b.id, "withdraw")}
+                    >
+                      Withdraw offer
+                    </button>
+                  ) : null}
+                  {b.status === "accepted" && live ? (
+                    <>
+                      <button
+                        className="btn btn-success"
+                        disabled={!!busy || future}
+                        title="Available after the requested departure time"
+                        onClick={() => action(b.id, "complete")}
+                      >
+                        Complete journey
+                      </button>
+                      {future ? (
+                        <button
+                          className="btn btn-secondary"
+                          disabled={!!busy}
+                          onClick={() => {
+                            setMessage("");
+                            setError(false);
+                            setCancel(b.id);
+                          }}
+                        >
+                          Cancel booking
+                        </button>
+                      ) : null}
+                    </>
+                  ) : null}
                 </div>
-              ) : null}
+              </div>
             </article>
-          ))
+          );
+        })
       ) : (
         <div className="panel">
           <Empty
-            title="Your first ride starts here."
-            text="Publish a route above and make room for your fellow students."
+            title="Choose your first passenger."
+            text="Select an available request above and enter the fare you want to offer."
+            icon="car"
           />
         </div>
       )}
-      {confirm ? (
-        <div className="modal-backdrop" onClick={() => setConfirm(null)}>
+      {cancel ? (
+        <div className="modal-backdrop" onClick={() => setCancel(null)}>
           <div
             className="modal-box max-w-sm"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="cancel-title"
+            aria-labelledby="cancel-driver-booking-title"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="cancel-title" className="section-title">
-              Cancel this ride?
+            <h2 id="cancel-driver-booking-title" className="section-title">
+              Cancel this booking?
             </h2>
-            <p className="text-xs muted leading-6 my-4">
-              All pending and accepted bookings for this ride will be cancelled
-              too.
+            <p className="text-xs muted my-4">
+              The passenger&apos;s confirmed booking will be cancelled.
             </p>
-            <div className="action-group justify-end">
+            <Notice message={error ? message : ""} error />
+            <div className="action-group">
               <button
                 className="btn btn-secondary"
-                onClick={() => setConfirm(null)}
+                onClick={() => setCancel(null)}
               >
-                Keep ride
+                Keep booking
               </button>
               <button
                 className="btn btn-danger"
                 disabled={!!busy}
-                onClick={() => action("ride", confirm, "cancel")}
+                onClick={() => action(cancel, "cancel")}
               >
-                Cancel ride
+                Cancel booking
               </button>
             </div>
           </div>

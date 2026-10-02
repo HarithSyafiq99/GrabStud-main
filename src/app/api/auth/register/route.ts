@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { hash } from "bcryptjs";
 import { ensureSchema, getDb, newId, nowIso, writeAudit } from "@/lib/db";
-import { isValidEmail, jsonError } from "@/lib/http";
+import {
+  isValidEmail,
+  isValidPhone,
+  normalizePhone,
+  jsonError,
+} from "@/lib/http";
 import { createSession } from "@/lib/auth";
 import { validDocument } from "@/lib/documents";
 import type { Role } from "@/lib/types";
@@ -14,6 +19,7 @@ export async function POST(request: Request) {
     const email = String(body.email ?? "")
       .trim()
       .toLowerCase();
+    const phone_number = normalizePhone(body.phone_number);
     const password = String(body.password ?? "");
     const student_number = String(body.student_number ?? "").trim();
     const role = String(body.role ?? "") as Role;
@@ -22,9 +28,15 @@ export async function POST(request: Request) {
       : null;
     const license_doc = body.license_doc ? String(body.license_doc) : null;
 
+    if (!phone_number)
+      return jsonError(
+        "Phone number is required for both passengers and drivers.",
+      );
     if (!name || !email || !password || !student_number) {
       return jsonError("All fields are required.");
     }
+    if (!isValidPhone(phone_number))
+      return jsonError("Enter a valid phone number with 8 to 15 digits.");
     if (!isValidEmail(email)) return jsonError("Invalid email.");
     if (password.length < 8 || password.length > 72)
       return jsonError("Password must be 8–72 characters.");
@@ -56,12 +68,13 @@ export async function POST(request: Request) {
 
     await db.execute({
       sql: `INSERT INTO users
-            (id, name, email, password_hash, student_number, role, status, student_id_doc, license_doc, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
+            (id, name, email, phone_number, password_hash, student_number, role, status, student_id_doc, license_doc, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
       args: [
         id,
         name,
         email,
+        phone_number,
         password_hash,
         student_number,
         role,
@@ -81,6 +94,7 @@ export async function POST(request: Request) {
       id,
       name,
       email,
+      phone_number,
       role,
       status: "pending",
     });

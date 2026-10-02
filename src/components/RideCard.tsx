@@ -16,7 +16,7 @@ export function RideCard({
     [message, setMessage] = useState(""),
     [error, setError] = useState(false);
   const full = ride.seats_available <= 0 || ride.status !== "open";
-  const requested = ["pending", "accepted", "completed"].includes(
+  const requested = ["pending", "offered", "accepted", "completed"].includes(
     ride.booking_status ?? "",
   );
   async function book() {
@@ -27,7 +27,9 @@ export function RideCard({
         method: "POST",
         body: JSON.stringify({ payment_method: payment }),
       });
-      setMessage("Request sent! Your driver will confirm your seat.");
+      setMessage(
+        "Request sent! Your driver will offer a price for you to review.",
+      );
       setError(false);
       onBooked?.();
     } catch (e) {
@@ -80,7 +82,7 @@ export function RideCard({
             <small>RM </small>
             {Number(ride.flat_rate).toFixed(2)}
           </strong>
-          <small>per person · fixed rate</small>
+          <small>per person · suggested rate</small>
         </div>
         <div className="ride-booking">
           <select
@@ -103,10 +105,12 @@ export function RideCard({
               : requested
                 ? ride.booking_status === "accepted"
                   ? "Seat confirmed"
-                  : "Requested"
+                  : ride.booking_status === "offered"
+                    ? "Review price below"
+                    : "Requested"
                 : full
                   ? "Fully booked"
-                  : "Book a seat"}
+                  : "Request a seat"}
             {!full && !requested ? <Icon name="arrow" size={13} /> : null}
           </button>
         </div>

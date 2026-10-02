@@ -1,5 +1,9 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { BookingOffer } from "@/components/BookingOffer";
+import { BookingProgress } from "@/components/BookingProgress";
+import { RouteLoading } from "@/components/RouteLoading";
+import { DownloadButton } from "@/components/DownloadButton";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Icon } from "@/components/Icon";
 import { Notice, Stats, Empty } from "@/components/UI";
@@ -13,9 +17,11 @@ export default function History() {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(""),
     [cancel, setCancel] = useState<string | null>(null);
-  const load = useCallback(async () => {
+  const load = useCallback(async (background = false) => {
     try {
-      const d = await api<{ history: Row[]; role: string }>("/api/history");
+      const d = await api<{ history: Row[]; role: string }>("/api/history", {
+        feedback: background ? "background" : "blocking",
+      });
       setRows(d.history);
       setRole(d.role);
       setError("");
@@ -27,11 +33,11 @@ export default function History() {
   }, []);
   useEffect(() => {
     load();
-    const id = setInterval(load, 20000);
+    const id = setInterval(() => load(true), 20000);
     return () => clearInterval(id);
   }, [load]);
   async function cancelBooking() {
-    if (!cancel) return;
+    if (!cancel || busy) return;
     setBusy(cancel);
     try {
       await api(`/api/bookings/${cancel}`, {
@@ -49,6 +55,7 @@ export default function History() {
   const list = rows.filter((r) => filter === "all" || r.status === filter);
   return (
     <div>
+      <BookingProgress active={!!busy} label="Cancelling your booking…" />
       <div className="page-heading">
         <div>
           <span className="eyebrow">EVERY JOURNEY HAS A STORY</span>
@@ -62,10 +69,12 @@ export default function History() {
           <p>Keep track of bookings, confirmations, and good company.</p>
         </div>
         <div className="flex gap-2 print-hide">
-          <a className="btn btn-secondary" href="/api/reports/history">
-            <Icon name="file" size={15} />
+          <DownloadButton
+            url="/api/reports/history"
+            filename="grabstudent-history.csv"
+          >
             <span className="hidden sm:inline">Export</span> CSV
-          </a>
+          </DownloadButton>
           <button
             className="icon-btn"
             aria-label="Print report"
@@ -79,7 +88,7 @@ export default function History() {
         items={[
           { label: "Total bookings", value: rows.length, icon: "history" },
           {
-            label: "Accepted bookings",
+            label: "Booked seats",
             value: rows.filter((r) => r.status === "accepted").length,
             icon: "check",
           },
@@ -105,22 +114,31 @@ export default function History() {
           onChange={(e) => setFilter(e.target.value)}
         >
           <option value="all">All statuses</option>
-          {["pending", "accepted", "completed", "rejected", "cancelled"].map(
-            (s) => (
-              <option key={s} value={s}>
-                {s[0].toUpperCase() + s.slice(1)}
-              </option>
-            ),
-          )}
+          {[
+            "pending",
+            "offered",
+            "accepted",
+            "completed",
+            "rejected",
+            "cancelled",
+          ].map((s) => (
+            <option key={s} value={s}>
+              {s === "offered"
+                ? "Awaiting price approval"
+                : s === "accepted"
+                  ? "Booked"
+                  : s[0].toUpperCase() + s.slice(1)}
+            </option>
+          ))}
         </select>
       </div>
       <div className="panel table-panel">
-        <table className="data-table">
+        <table className="data-table mobile-card-table">
           <thead>
             <tr>
               <th>JOURNEY</th>
               <th>DEPARTURE</th>
-              <th>FIXED RATE</th>
+              <th>PRICE</th>
               <th>STATUS</th>
               <th>PAYMENT</th>
               {role === "passenger" ? (
@@ -132,7 +150,7 @@ export default function History() {
             {!loading &&
               list.map((r) => (
                 <tr key={String(r.id)}>
-                  <td>
+                  <td data-label="Journey" className="mobile-card-title">
                     <p>
                       {r.from_zone} → {r.to_zone}
                     </p>
@@ -140,33 +158,77 @@ export default function History() {
                       {role === "driver"
                         ? r.passenger_name
                         : role === "admin"
-                          ? `${r.passenger_name} · ${r.driver_name}`
-                          : r.driver_name}
+                          ? `${r.passenger_name} · ${r.driver_name || "Waiting for driver"}`
+                          : r.driver_name || "Waiting for driver"}
                     </small>
+                    {role === "driver" && r.passenger_phone ? (
+                      <small>
+                        <a href={"tel:" + r.passenger_phone}>
+                          {r.passenger_phone}
+                        </a>
+                      </small>
+                    ) : null}
+                    {role === "passenger" && r.driver_phone ? (
+                      <small>
+                        <a href={"tel:" + r.driver_phone}>{r.driver_phone}</a>
+                      </small>
+                    ) : null}
+                    {role === "admin" ? (
+                      <small>
+                        {r.passenger_phone} / {r.driver_phone}
+                      </small>
+                    ) : null}
                   </td>
-                  <td>
+                  <td data-label="Departure">
                     {rideDate(String(r.departure_at))}
                     <small>{rideTime(String(r.departure_at))}</small>
                   </td>
-                  <td>RM {Number(r.flat_rate).toFixed(2)}</td>
-                  <td>
+                  <td data-label="Price">
+                    {r.quoted_price == null
+                      ? "Awaiting driver price"
+                      : "RM " + (Number(r.quoted_price) / 100).toFixed(2)}
+                  </td>
+                  <td data-label="Status">
                     <StatusBadge status={String(r.status)} />
                   </td>
-                  <td className="uppercase muted">
+                  <td data-label="Payment" className="uppercase muted">
                     {r.payment_method}
                     <small className="normal-case">
                       Paid to driver offline
                     </small>
                   </td>
                   {role === "passenger" ? (
-                    <td className="print-hide">
-                      {["pending", "accepted"].includes(String(r.status)) &&
+                    <td
+                      data-label="Manage booking"
+                      className="print-hide mobile-card-actions"
+                    >
+                      {r.status === "offered" &&
+                      (r.ride_id == null ||
+                        ["open", "full"].includes(String(r.ride_status))) &&
+                      new Date(String(r.departure_at)).getTime() >
+                        Date.now() ? (
+                        <BookingOffer
+                          id={String(r.id)}
+                          price={Number(r.quoted_price)}
+                          driverId={
+                            r.driver_id == null ? null : String(r.driver_id)
+                          }
+                          onUpdated={load}
+                          disabled={!!busy}
+                        />
+                      ) : null}
+                      {["pending", "offered", "accepted"].includes(
+                        String(r.status),
+                      ) &&
                       new Date(String(r.departure_at)).getTime() >
                         Date.now() ? (
                         <button
                           className="btn btn-secondary"
                           disabled={!!busy}
-                          onClick={() => setCancel(String(r.id))}
+                          onClick={() => {
+                            setError("");
+                            setCancel(String(r.id));
+                          }}
                         >
                           Cancel
                         </button>
@@ -180,7 +242,7 @@ export default function History() {
           </tbody>
         </table>
         {loading ? (
-          <div className="skeleton m-5" />
+          <RouteLoading label="Loading booking history…" />
         ) : !list.length ? (
           <Empty
             title="A fresh start."
@@ -192,8 +254,10 @@ export default function History() {
       {role === "passenger" ? (
         <div className="notice">
           <Icon name="wallet" size={17} />
-          Pending means your request is awaiting driver approval. Pay cash or
-          scan your driver’s QR after acceptance.
+          Pending requests await the driver’s price. Agree to the offer to book
+          your seat, or decline it. Pay the agreed fare directly to your driver
+          in cash or by QR. Declining a price makes your request available to
+          other drivers.
         </div>
       ) : null}
       {cancel ? (
@@ -209,9 +273,9 @@ export default function History() {
               Cancel your booking?
             </h2>
             <p className="text-xs muted leading-6 my-4">
-              If your seat was confirmed, it will become available for another
-              student.
+              Your request and any confirmed booking will be cancelled.
             </p>
+            <Notice message={error} error />
             <div className="action-group justify-end">
               <button
                 className="btn btn-secondary"

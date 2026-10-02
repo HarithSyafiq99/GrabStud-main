@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { hash } from "bcryptjs";
 import { createClient } from "@libsql/client";
 import { loadEnvLocal, resolveSqliteUrl } from "./env";
-import { SCHEMA_SQL } from "../src/lib/schema";
-import { getFlatRate, ZONES } from "../src/lib/zones";
+import { initializeSchema } from "../src/lib/migrations";
+import { ZONES } from "../src/lib/zones";
 loadEnvLocal();
 async function main() {
   const url = resolveSqliteUrl();
@@ -12,10 +12,7 @@ async function main() {
       "Demo seed is local-only. Use db:seed for a remote database.",
     );
   const db = createClient({ url });
-  for (const sql of SCHEMA_SQL.split(";")
-    .map((s) => s.trim())
-    .filter(Boolean))
-    await db.execute(sql);
+  await initializeSchema(db);
   const now = new Date().toISOString(),
     password = await hash("Student123!", 10);
   // Synthetic document only; no real student information.
@@ -26,39 +23,40 @@ async function main() {
     {
       id: "demo-passenger",
       name: "Harith Syafiq",
-      email: "passenger@grabstudent.edu",
+      email: "passenger@grabstudent.com",
       role: "passenger",
       status: "approved",
     },
     {
       id: "demo-driver",
       name: "Aiman Hakim",
-      email: "driver@grabstudent.edu",
+      email: "driver@grabstudent.com",
       role: "driver",
       status: "approved",
     },
     {
       id: "demo-driver-2",
       name: "Sarah Amira",
-      email: "sarah@grabstudent.edu",
+      email: "sarah@grabstudent.com",
       role: "driver",
       status: "approved",
     },
     {
       id: "demo-pending",
       name: "Nur Alya",
-      email: "alya@grabstudent.edu",
+      email: "alya@grabstudent.com",
       role: "passenger",
       status: "pending",
     },
   ];
   for (const u of people)
     await db.execute({
-      sql: "INSERT OR IGNORE INTO users VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+      sql: "INSERT INTO users (id,name,email,phone_number,password_hash,student_number,role,status,student_id_doc,license_doc,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET email=excluded.email, phone_number=excluded.phone_number",
       args: [
         u.id,
         u.name,
         u.email,
+        "+6010000000" + people.indexOf(u),
         password,
         "DEMO-" + u.id,
         u.role,
@@ -70,32 +68,22 @@ async function main() {
       ],
     });
   for (let i = 0; i < 6; i++) {
-    const from = ZONES[i % 3],
-      to = ZONES[3 + i],
-      driver = i % 2 ? "demo-driver-2" : "demo-driver";
     await db.execute({
-      sql: "INSERT OR IGNORE INTO rides VALUES (?,?,?,?,?,?,?,?,?,?)",
+      sql: "INSERT OR IGNORE INTO bookings (id,passenger_id,from_zone,to_zone,departure_at,status,payment_method,created_at,updated_at) VALUES (?,?,?,?,?,'pending','cash',?,?)",
       args: [
-        `demo-ride-${i}`,
-        driver,
-        from,
-        to,
+        "demo-request-" + i,
+        "demo-passenger",
+        ZONES[i % 3],
+        ZONES[3 + i],
         new Date(Date.now() + (i + 2) * 3600000).toISOString(),
-        3,
-        3,
-        getFlatRate(from, to),
-        "open",
+        now,
         now,
       ],
     });
   }
-  await db.execute({
-    sql: "INSERT OR IGNORE INTO bookings VALUES (?,?,?,'pending','cash',?,?)",
-    args: ["demo-booking", "demo-ride-0", "demo-passenger", now, now],
-  });
   db.close();
   console.log(
-    "Local demo accounts and sample rides ready. See README for logins.",
+    "Local demo accounts and passenger journey requests ready. See README for logins.",
   );
 }
 main().catch((e) => {

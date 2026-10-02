@@ -33,6 +33,7 @@ export async function POST(request: Request) {
       id: String(row.id),
       name: String(row.name),
       email: String(row.email),
+      phone_number: String(row.phone_number),
       role: row.role as Role,
       status: row.status as UserStatus,
     };

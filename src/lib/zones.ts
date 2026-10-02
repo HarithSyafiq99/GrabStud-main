@@ -12,7 +12,7 @@ export const ZONES = [
 
 export type Zone = (typeof ZONES)[number];
 
-/** Static petrol-sharing rates in MYR. Drivers cannot override these. */
+/** Suggested petrol-sharing rates in MYR; the driver offers the final fare. */
 const RATE_TABLE: Record<string, number> = {
   "Main Campus|Library": 3,
   "Main Campus|Faculty of Engineering": 4,
