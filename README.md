@@ -49,10 +49,15 @@ npm run dev
 
 Demo shortcuts fill the form; they do not bypass authentication. Six passenger requests and a pending student are seeded only into a local SQLite database. Demo documents are clearly marked synthetic. Request dates are generated when seeded. Re-running updates example emails and phone numbers while keeping existing demo passwords and bookings; use a fresh local database if demo departure times are old. Real accounts can also be registered through `/register`.
 
+Driver demo accounts also need a profile photo and car details in My profile before they can send fare offers.
+
 ## Features
 
 - Login with hashed passwords and an HttpOnly signed session cookie.
+- The passenger request form includes a current-bookings list with request, driver-offer and booked progress, fare/arrival updates and links to booking details. It refreshes after actions and every 20 seconds.
 - Passenger or driver registration with a required phone number and any valid email address; image/PDF document upload with validation.
+- Drivers add a mandatory profile photo and car colour, model/type and plate number. Passenger photos are optional. Photos are resized for quick loading; both roles can update their details in My profile.
+- New passengers and drivers get a short, three-step welcome guide, saved per account. Returning approved accounts skip the guide during upgrades.
 - Current users can add or edit their phone number; booking participants can view each other’s contact number.
 - New users start pending; admins review student IDs and driving licenses.
 - Declined students can upload updated documents for another review.
@@ -68,9 +73,13 @@ Demo shortcuts fill the form; they do not bypass authentication. Six passenger r
 - Passenger cancellation closes their request or confirmed booking before departure.
 - Declined or withdrawn offers reopen the request for another driver; the previous fare is cleared.
 - Duplicate active requests for the same passenger, route and departure time are blocked.
-- Selected drivers can cancel bookings before departure and complete booked journeys after departure.
+- Passengers can add and edit pickup remarks such as an entrance or landmark; drivers see these beside each request.
+- Booked drivers can send an “I’ve arrived” reminder. Passengers see their driver's photo and car details, then reply “I’m on my way.” Updates refresh automatically every 20 seconds.
+- Selected drivers can cancel bookings before departure. The Complete journey button has been removed and the action area focuses on pickup coordination.
+- Driver Wallet shows daily, weekly and monthly recorded fares with an animated cash/QR donut chart and recent journey fares. Totals include booked journeys after departure and completed journeys, exclude future/offered/cancelled requests, and follow Malaysia time with Monday-start weeks. Direct cash/QR payment is not verified by the app.
 - Ride history, status filter, CSV export and print view.
 - Admin overview, student search, private document previews and system audit logs.
+- Admins manage passengers, drivers and administrators through **All users → Edit user**. They can edit name, email, phone, student/account number, role, approval status, profile photo, driver car details and verification documents, and optionally set a new password. Existing passwords are never displayed. Login/access changes revoke old sessions; an admin editing their own account gets a renewed session. The last approved administrator cannot be demoted or deactivated. Stale edits and duplicate emails are rejected, and audit logs record changed field names without passwords or documents.
 - Responsive sidebar, branded page loading, hover effects, staggered card entry and animated SVG campus illustration. Reduced-motion preference is respected.
 - Mobile bottom navigation, an accessible account drawer, single-column phone forms, touch-friendly order actions, and stacked history/admin cards.
 - Subtle entrances for cards, dialogs and notifications; desktop hover feedback; focused form labels; document completion feedback; and animated status/total updates. Motion respects reduced-motion settings and hover effects are limited to mouse devices.

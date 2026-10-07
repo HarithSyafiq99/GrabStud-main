@@ -3,7 +3,7 @@ import { compare } from "bcryptjs";
 import { ensureSchema, getDb, writeAudit } from "@/lib/db";
 import { isValidEmail, jsonError } from "@/lib/http";
 import { createSession } from "@/lib/auth";
-import type { Role, UserStatus } from "@/lib/types";
+import { sessionUser } from "@/lib/user";
 
 export async function POST(request: Request) {
   try {
@@ -29,20 +29,14 @@ export async function POST(request: Request) {
     const ok = await compare(password, String(row.password_hash));
     if (!ok) return jsonError("Invalid credentials.", 401);
 
-    const user = {
-      id: String(row.id),
-      name: String(row.name),
-      email: String(row.email),
-      phone_number: String(row.phone_number),
-      role: row.role as Role,
-      status: row.status as UserStatus,
-    };
+    const user = sessionUser(row);
 
     await createSession(user);
     await writeAudit(user.id, "LOGIN", `${user.email} signed in`);
 
     let redirect = "/pending";
-    if (user.role === "admin") redirect = "/admin";
+    if (user.status === "approved" && user.role === "admin")
+      redirect = "/admin";
     else if (user.status === "approved" && user.role === "driver")
       redirect = "/driver";
     else if (user.status === "approved") redirect = "/passenger";

@@ -17,6 +17,12 @@ export type SessionUser = {
   phone_number: string;
   role: Role;
   status: UserStatus;
+  profile_photo: string | null;
+  car_colour: string;
+  car_type: string;
+  car_plate: string;
+  onboarding_seen_at: string | null;
+  session_version: number;
 };
 
 export type UserRecord = SessionUser & {
@@ -62,6 +68,14 @@ export type BookingRecord = {
   ride_status?: RideStatus | null;
   flat_rate?: number;
   driver_name?: string;
+  pickup_note: string;
+  arrived_at: string | null;
+  arrival_acknowledged_at: string | null;
+  passenger_photo?: string | null;
+  driver_photo?: string | null;
+  car_colour?: string;
+  car_type?: string;
+  car_plate?: string;
 };
 
 export type AuditLog = {

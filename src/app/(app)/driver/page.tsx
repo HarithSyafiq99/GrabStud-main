@@ -6,11 +6,21 @@ import { ACTION_SUCCESS_MS } from "@/components/ActionButton";
 import { BookingProgress } from "@/components/BookingProgress";
 import { RouteLoading } from "@/components/RouteLoading";
 import { FareOfferForm } from "@/components/FareOfferForm";
+import { PickupRemark, DriverArrival } from "@/components/PickupDetails";
+import { Avatar } from "@/components/Avatar";
+import { useCurrentUser } from "@/components/UserContext";
 import { Notice, Stats, Empty } from "@/components/UI";
 import { ZONES, getFlatRate } from "@/lib/zones";
 import { api, rideDate, rideTime } from "@/lib/client";
 import type { BookingRecord } from "@/lib/types";
 export default function Driver() {
+  const user = useCurrentUser();
+  const profileReady = !!(
+    user.profile_photo &&
+    user.car_colour &&
+    user.car_type &&
+    user.car_plate
+  );
   const [from, setFrom] = useState(""),
     [to, setTo] = useState(""),
     [date, setDate] = useState(""),
@@ -73,9 +83,7 @@ export default function Driver() {
         ? "Sending your price offer…"
         : kind === "withdraw"
           ? "Withdrawing your offer…"
-          : kind === "complete"
-            ? "Completing this journey…"
-            : "Cancelling this booking…",
+          : "Cancelling this booking…",
     );
     setMessage("");
     try {
@@ -91,9 +99,7 @@ export default function Driver() {
           ? "Passenger selected and price sent. Wait for their agreement."
           : kind === "withdraw"
             ? "Your offer was withdrawn. Other drivers can choose this request."
-            : kind === "complete"
-              ? "Journey completed."
-              : "Booking cancelled.",
+            : "Booking cancelled.",
       );
       setError(false);
       setCancel(null);
@@ -114,7 +120,10 @@ export default function Driver() {
   function info(b: BookingRecord) {
     return (
       <div className="booking-info">
-        <span className="avatar">{b.passenger_name?.[0]}</span>
+        <Avatar
+          name={b.passenger_name || "Passenger"}
+          photo={b.passenger_photo}
+        />
         <div>
           <h3>{b.passenger_name}</h3>
           <p className="text-xs muted">
@@ -145,6 +154,18 @@ export default function Driver() {
         label={successful ? "Price offer sent!" : busyLabel}
         success={!!successful}
       />
+      {!profileReady ? (
+        <div className="profile-reminder">
+          <Icon name="shield" size={20} />
+          <div>
+            <strong>Finish your driver profile</strong>
+            <p>
+              Add a clear profile photo and your car details in My profile
+              before sending a fare offer.
+            </p>
+          </div>
+        </div>
+      ) : null}
       <div className="page-heading">
         <div>
           <span className="eyebrow">CHOOSE A JOURNEY TO SHARE</span>
@@ -245,11 +266,14 @@ export default function Driver() {
       ) : available.length ? (
         available.map((b) => (
           <article className="panel booking-item" key={b.id}>
-            {info(b)}
+            <div className="booking-person">
+              {info(b)}
+              <PickupRemark booking={b} onUpdated={load} />
+            </div>
             <FareOfferForm
               passengerName={b.passenger_name ?? "passenger"}
               suggestedPrice={getFlatRate(b.from_zone, b.to_zone)}
-              disabled={!!busy}
+              disabled={!!busy || !profileReady}
               pending={busy === b.id}
               success={successful === b.id}
               onOffer={(price) => action(b.id, "accept", price)}
@@ -284,8 +308,11 @@ export default function Driver() {
               ["open", "full"].includes(b.ride_status ?? "");
           return (
             <article className="panel booking-item" key={b.id}>
-              {info(b)}
-              <div>
+              <div className="booking-person">
+                {info(b)}
+                <PickupRemark booking={b} onUpdated={load} />
+              </div>
+              <div className="booking-actions">
                 <StatusBadge status={b.status} />
                 <p className="text-xs mt-2">
                   RM {(Number(b.quoted_price) / 100).toFixed(2)}
@@ -307,14 +334,7 @@ export default function Driver() {
                   ) : null}
                   {b.status === "accepted" && live ? (
                     <>
-                      <button
-                        className="btn btn-success"
-                        disabled={!!busy || future}
-                        title="Available after the requested departure time"
-                        onClick={() => action(b.id, "complete")}
-                      >
-                        Complete journey
-                      </button>
+                      <DriverArrival booking={b} onUpdated={load} />
                       {future ? (
                         <button
                           className="btn btn-secondary"

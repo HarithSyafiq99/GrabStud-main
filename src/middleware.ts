@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose/jwt/verify";
 
 const PUBLIC_PATHS = ["/login", "/register"];
+const PUBLIC_AUTH_APIS = ["/api/auth/login", "/api/auth/register"];
 
 function getSecret() {
   return new TextEncoder().encode(
@@ -16,8 +17,7 @@ export async function middleware(request: NextRequest) {
   const isPublic =
     PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`)) ||
     pathname.startsWith("/_next") ||
-    pathname.startsWith("/api/auth/login") ||
-    pathname.startsWith("/api/auth/register") ||
+    PUBLIC_AUTH_APIS.includes(pathname) ||
     pathname === "/favicon.ico" ||
     pathname === "/favicon.svg";
 
@@ -44,10 +44,7 @@ export async function middleware(request: NextRequest) {
   const token = request.cookies.get("gs_session")?.value;
 
   if (pathname.startsWith("/api")) {
-    if (
-      pathname.startsWith("/api/auth/login") ||
-      pathname.startsWith("/api/auth/register")
-    ) {
+    if (PUBLIC_AUTH_APIS.includes(pathname)) {
       return NextResponse.next();
     }
     if (!token) {
@@ -73,7 +70,8 @@ export async function middleware(request: NextRequest) {
     const role = payload.role as string;
     const status = payload.status as string;
 
-    if (pathname === "/" || pathname === "/login" || pathname === "/register") {
+    if (pathname === "/login") return NextResponse.next();
+    if (pathname === "/" || pathname === "/register") {
       if (status === "pending" || status === "rejected") {
         return NextResponse.redirect(new URL("/pending", request.url));
       }
@@ -87,7 +85,10 @@ export async function middleware(request: NextRequest) {
     if (pathname.startsWith("/admin") && role !== "admin") {
       return NextResponse.redirect(new URL("/login", request.url));
     }
-    if (pathname.startsWith("/driver") && role !== "driver") {
+    if (
+      (pathname.startsWith("/driver") || pathname.startsWith("/wallet")) &&
+      role !== "driver"
+    ) {
       return NextResponse.redirect(new URL("/passenger", request.url));
     }
     if (pathname.startsWith("/passenger") && role === "driver") {

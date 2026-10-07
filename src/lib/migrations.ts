@@ -14,6 +14,25 @@ export async function initializeSchema(db: Client) {
       await tx.execute(
         "ALTER TABLE users ADD COLUMN phone_number TEXT NOT NULL DEFAULT ''",
       );
+    for (const [column, definition] of [
+      ["session_version", "INTEGER NOT NULL DEFAULT 0"],
+      ["profile_photo", "TEXT"],
+      ["car_colour", "TEXT NOT NULL DEFAULT ''"],
+      ["car_type", "TEXT NOT NULL DEFAULT ''"],
+      ["car_plate", "TEXT NOT NULL DEFAULT ''"],
+      ["onboarding_seen_at", "TEXT"],
+    ]) {
+      if (!users.rows.some((r) => r.name === column)) {
+        await tx.execute(
+          `ALTER TABLE users ADD COLUMN ${column} ${definition}`,
+        );
+        // Returning approved accounts do not need the first-time welcome tour.
+        if (column === "onboarding_seen_at")
+          await tx.execute(
+            "UPDATE users SET onboarding_seen_at=created_at WHERE status='approved'",
+          );
+      }
+    }
     const table = await tx.execute(
       "SELECT sql FROM sqlite_master WHERE type='table' AND name='bookings'",
     );
@@ -65,6 +84,17 @@ export async function initializeSchema(db: Client) {
     await tx.execute(
       "CREATE INDEX IF NOT EXISTS idx_bookings_driver ON bookings(driver_id)",
     );
+    const upgraded = await tx.execute("PRAGMA table_info(bookings)");
+    for (const [column, definition] of [
+      ["pickup_note", "TEXT NOT NULL DEFAULT ''"],
+      ["arrived_at", "TEXT"],
+      ["arrival_acknowledged_at", "TEXT"],
+    ]) {
+      if (!upgraded.rows.some((r) => r.name === column))
+        await tx.execute(
+          `ALTER TABLE bookings ADD COLUMN ${column} ${definition}`,
+        );
+    }
     await tx.execute(
       "CREATE INDEX IF NOT EXISTS idx_bookings_route ON bookings(from_zone,to_zone,departure_at)",
     );

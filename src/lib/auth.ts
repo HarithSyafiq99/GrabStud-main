@@ -2,7 +2,8 @@ import { SignJWT } from "jose/jwt/sign";
 import { jwtVerify } from "jose/jwt/verify";
 import { cookies } from "next/headers";
 import { ensureSchema, getDb } from "./db";
-import type { Role, SessionUser, UserStatus } from "./types";
+import type { Role, SessionUser } from "./types";
+import { SESSION_COLUMNS, sessionUser } from "./user";
 
 const COOKIE = "gs_session";
 
@@ -22,6 +23,7 @@ export async function createSession(user: SessionUser) {
     email: user.email,
     role: user.role,
     status: user.status,
+    session_version: user.session_version,
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -51,19 +53,14 @@ export async function getSession(): Promise<SessionUser | null> {
     const { payload } = await jwtVerify(token, secret());
     await ensureSchema();
     const result = await getDb().execute({
-      sql: "SELECT id, name, email, phone_number, role, status FROM users WHERE id = ?",
+      sql: `SELECT ${SESSION_COLUMNS} FROM users WHERE id = ?`,
       args: [String(payload.sub)],
     });
     const row = result.rows[0];
     if (!row) return null;
-    return {
-      id: String(row.id),
-      name: String(row.name),
-      email: String(row.email),
-      phone_number: String(row.phone_number),
-      role: row.role as Role,
-      status: row.status as UserStatus,
-    };
+    if (Number(payload.session_version ?? 0) !== Number(row.session_version))
+      return null;
+    return sessionUser(row);
   } catch {
     return null;
   }
@@ -75,7 +72,10 @@ export function requireRole(user: SessionUser | null, roles: Role[]) {
     (err as Error & { status: number }).status = 401;
     throw err;
   }
-  if (!roles.includes(user.role)) {
+  if (
+    !roles.includes(user.role) ||
+    (user.role === "admin" && user.status !== "approved")
+  ) {
     const err = new Error("Forbidden");
     (err as Error & { status: number }).status = 403;
     throw err;
@@ -84,7 +84,7 @@ export function requireRole(user: SessionUser | null, roles: Role[]) {
 }
 
 export function requireApproved(user: SessionUser) {
-  if (user.role !== "admin" && user.status !== "approved") {
+  if (user.status !== "approved") {
     const err = new Error("Account pending approval");
     (err as Error & { status: number }).status = 403;
     throw err;

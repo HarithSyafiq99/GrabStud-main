@@ -11,10 +11,14 @@ export async function GET() {
       "SELECT status,COUNT(*) as count FROM users WHERE role!='admin' GROUP BY status",
     );
     const rides = await db.execute("SELECT COUNT(*) as total FROM rides");
+    const allUsers = await db.execute("SELECT COUNT(*) as total FROM users");
     return NextResponse.json({
-      counts: Object.fromEntries(
-        users.rows.map((r) => [String(r.status), Number(r.count)]),
-      ),
+      counts: {
+        ...Object.fromEntries(
+          users.rows.map((r) => [String(r.status), Number(r.count)]),
+        ),
+        all: Number(allUsers.rows[0].total),
+      },
       rides: Number(rides.rows[0].total),
     });
   } catch (e) {

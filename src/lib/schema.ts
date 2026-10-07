@@ -5,11 +5,17 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT NOT NULL UNIQUE,
   phone_number TEXT NOT NULL DEFAULT '',
   password_hash TEXT NOT NULL,
+  session_version INTEGER NOT NULL DEFAULT 0,
   student_number TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('passenger', 'driver', 'admin')),
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
   student_id_doc TEXT,
   license_doc TEXT,
+  profile_photo TEXT,
+  car_colour TEXT NOT NULL DEFAULT '',
+  car_type TEXT NOT NULL DEFAULT '',
+  car_plate TEXT NOT NULL DEFAULT '',
+  onboarding_seen_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -38,6 +44,9 @@ CREATE TABLE IF NOT EXISTS bookings (
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'offered', 'accepted', 'rejected', 'completed', 'cancelled')),
   quoted_price INTEGER CHECK (quoted_price > 0),
   payment_method TEXT NOT NULL CHECK (payment_method IN ('cash', 'qr')),
+  pickup_note TEXT NOT NULL DEFAULT '',
+  arrived_at TEXT,
+  arrival_acknowledged_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE (ride_id, passenger_id)

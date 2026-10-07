@@ -9,7 +9,7 @@ import {
   useTransition,
 } from "react";
 import { BookingProgress } from "@/components/BookingProgress";
-import { PhoneSettings } from "@/components/PhoneSettings";
+import { ProfileSettings } from "@/components/ProfileSettings";
 import { Brand } from "@/components/Brand";
 import { Icon } from "@/components/Icon";
 import { Notice } from "@/components/UI";
@@ -28,6 +28,7 @@ export function PendingClient({ user: initial }: { user: SessionUser }) {
     [error, setError] = useState(false),
     [id, setId] = useState<string | null>(null),
     [license, setLicense] = useState<string | null>(null);
+  useEffect(() => setUser(initial), [initial]);
   const check = useCallback(
     async (manual = true) => {
       if (operationRef.current) return;
@@ -44,14 +45,22 @@ export function PendingClient({ user: initial }: { user: SessionUser }) {
         setUser(d.user);
         if (d.user.status === "approved") {
           startNavigation(() => {
-            router.push(d.user.role === "driver" ? "/driver" : "/passenger");
+            router.push(
+              d.user.role === "admin"
+                ? "/admin"
+                : d.user.role === "driver"
+                  ? "/driver"
+                  : "/passenger",
+            );
             router.refresh();
           });
         } else if (manual) {
           setMessage(
-            d.user.status === "rejected"
-              ? "Please upload updated documents below."
-              : "Your application is still in review. We’ll check again automatically.",
+            d.user.role === "admin"
+              ? "Your administrator access is inactive. Contact another approved administrator."
+              : d.user.status === "rejected"
+                ? "Please upload updated documents below."
+                : "Your application is still in review. We’ll check again automatically.",
           );
           setError(false);
         }
@@ -129,35 +138,41 @@ export function PendingClient({ user: initial }: { user: SessionUser }) {
         </div>
         <span className="eyebrow">ONE SMALL STEP TO YOUR NEXT RIDE</span>
         <h1 className="mt-4">
-          {user.status === "rejected"
-            ? "Let’s try that again."
-            : "You’re almost there."}
+          {user.role === "admin"
+            ? "Administrator access inactive"
+            : user.status === "rejected"
+              ? "Let’s try that again."
+              : "You’re almost there."}
         </h1>
         <p>
           Hi {user.name.split(" ")[0]}.{" "}
-          {user.status === "rejected"
-            ? "Your application was declined. Submit clear, updated documents for another review."
-            : "Your account is waiting for document verification. An admin will review your application before you can book or post rides."}
+          {user.role === "admin"
+            ? "Your administrator access is inactive. Contact another approved administrator to restore it."
+            : user.status === "rejected"
+              ? "Your application was declined. Submit clear, updated documents for another review."
+              : "Your account is waiting for document verification. An admin will review your application before you can book or post rides."}
         </p>
-        <div className="pending-steps">
-          <span>
-            <Icon name="check" size={12} />
-            Account created
-          </span>
-          <span>
-            <Icon name="clock" size={12} />
-            Verification
-          </span>
-          <span>
-            <Icon name="car" size={12} />
-            Ready to ride
-          </span>
-        </div>
+        {user.role !== "admin" ? (
+          <div className="pending-steps">
+            <span>
+              <Icon name="check" size={12} />
+              Account created
+            </span>
+            <span>
+              <Icon name="clock" size={12} />
+              Verification
+            </span>
+            <span>
+              <Icon name="car" size={12} />
+              Ready to ride
+            </span>
+          </div>
+        ) : null}
         <div className="my-4">
-          <PhoneSettings initialPhone={user.phone_number} />
+          <ProfileSettings user={user} />
         </div>
         <Notice message={message} error={error} />
-        {user.status === "rejected" ? (
+        {user.status === "rejected" && user.role !== "admin" ? (
           <form onSubmit={submit}>
             <Dropzone label="Student ID" required onFile={setId} />
             {user.role === "driver" ? (

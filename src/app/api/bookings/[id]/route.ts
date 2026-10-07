@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ensureSchema, getDb, nowIso, newId } from "@/lib/db";
 import { getSession, requireApproved, requireRole } from "@/lib/auth";
 import { handleError, jsonError } from "@/lib/http";
+import { validProfilePhoto, validVehicle } from "@/lib/profile";
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -12,7 +13,8 @@ export async function PATCH(
       requireRole(await getSession(), ["driver", "passenger"]),
     );
     const { id } = await params,
-      { action, price, quoted_price, driver_id } = await request.json();
+      { action, price, quoted_price, driver_id, pickup_note } =
+        await request.json();
     if (
       ![
         "accept",
@@ -22,6 +24,9 @@ export async function PATCH(
         "cancel",
         "withdraw",
         "complete",
+        "arrive",
+        "acknowledge",
+        "remark",
       ].includes(action)
     )
       return jsonError("Invalid action.");
@@ -39,6 +44,57 @@ export async function PATCH(
       if (!b) return await fail("Booking not found.", 404);
       const passenger = user.role === "passenger" && b.passenger_id === user.id,
         driver = user.role === "driver" && b.driver_id === user.id;
+      if (["arrive", "acknowledge", "remark"].includes(action)) {
+        if (action === "arrive" ? !driver : !passenger)
+          return await fail("Forbidden", 403);
+        if (
+          action === "remark"
+            ? !["pending", "offered", "accepted"].includes(String(b.status))
+            : b.status !== "accepted"
+        )
+          return await fail("This booking is no longer active.", 409);
+        if (
+          action !== "remark" &&
+          b.ride_id != null &&
+          !["open", "full"].includes(String(b.ride_status))
+        )
+          return await fail("This ride is closed.", 409);
+        if (action === "acknowledge" && !b.arrived_at)
+          return await fail(
+            "Your driver has not sent an arrival reminder yet.",
+            409,
+          );
+        if (
+          action === "remark" &&
+          (typeof pickup_note !== "string" || pickup_note.trim().length > 300)
+        )
+          return await fail(
+            "Pickup remarks must be text with at most 300 characters.",
+          );
+        const now = nowIso();
+        const updated = await tx.execute({
+          sql:
+            action === "remark"
+              ? "UPDATE bookings SET pickup_note=?,updated_at=? WHERE id=?"
+              : action === "arrive"
+                ? "UPDATE bookings SET arrived_at=?,updated_at=? WHERE id=? AND arrived_at IS NULL"
+                : "UPDATE bookings SET arrival_acknowledged_at=?,updated_at=? WHERE id=? AND arrival_acknowledged_at IS NULL",
+          args: [action === "remark" ? pickup_note.trim() : now, now, id],
+        });
+        if (updated.rowsAffected)
+          await tx.execute({
+            sql: "INSERT INTO audit_logs VALUES (?,?,?,?,?)",
+            args: [
+              newId(),
+              user.id,
+              action.toUpperCase() + "_BOOKING",
+              "Pickup coordination for booking " + id,
+              now,
+            ],
+          });
+        await tx.commit();
+        return NextResponse.json({ ok: true });
+      }
       const claim =
         action === "accept" &&
         user.role === "driver" &&
@@ -76,6 +132,10 @@ export async function PATCH(
       let quote = b.quoted_price == null ? null : Number(b.quoted_price),
         driverId = b.driver_id == null ? null : String(b.driver_id);
       if (action === "accept") {
+        if (!validProfilePhoto(user.profile_photo) || !validVehicle(user))
+          return await fail(
+            "Add your profile photo and car details in My profile before choosing a passenger.",
+          );
         if (
           typeof price !== "number" ||
           !Number.isFinite(price) ||
@@ -138,7 +198,7 @@ export async function PATCH(
                   : "cancelled",
         now = nowIso();
       await tx.execute({
-        sql: "UPDATE bookings SET status=?,driver_id=?,quoted_price=?,updated_at=? WHERE id=?",
+        sql: "UPDATE bookings SET status=?,driver_id=?,quoted_price=?,arrived_at=NULL,arrival_acknowledged_at=NULL,updated_at=? WHERE id=?",
         args: [status, driverId, quote, now, id],
       });
       await tx.execute({

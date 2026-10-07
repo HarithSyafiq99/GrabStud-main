@@ -70,6 +70,11 @@ export async function POST(request: Request) {
     const payment = body.payment_method ?? "cash";
     if (!["cash", "qr"].includes(payment))
       return jsonError("Choose cash or QR payment.");
+    const pickupNote = body.pickup_note ?? "";
+    if (typeof pickupNote !== "string" || pickupNote.trim().length > 300)
+      return jsonError(
+        "Pickup remarks must be text with at most 300 characters.",
+      );
     const tx = await getDb().transaction("write");
     try {
       const existing = await tx.execute({
@@ -87,7 +92,7 @@ export async function POST(request: Request) {
         now = nowIso();
       // Passenger input cannot assign a driver, confirm a booking or set its price.
       await tx.execute({
-        sql: "INSERT INTO bookings (id,passenger_id,from_zone,to_zone,departure_at,status,payment_method,created_at,updated_at) VALUES (?,?,?,?,?,'pending',?,?,?)",
+        sql: "INSERT INTO bookings (id,passenger_id,from_zone,to_zone,departure_at,status,payment_method,pickup_note,created_at,updated_at) VALUES (?,?,?,?,?,'pending',?,?,?,?)",
         args: [
           id,
           user.id,
@@ -95,6 +100,7 @@ export async function POST(request: Request) {
           to,
           departure.toISOString(),
           payment,
+          pickupNote.trim(),
           now,
           now,
         ],

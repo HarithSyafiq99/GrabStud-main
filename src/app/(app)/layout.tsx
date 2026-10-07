@@ -9,6 +9,6 @@ export default async function DashboardLayout({
 }) {
   const user = await getSession();
   if (!user) redirect("/login");
-  if (user.role !== "admin" && user.status !== "approved") redirect("/pending");
+  if (user.status !== "approved") redirect("/pending");
   return <AppShell user={user}>{children}</AppShell>;
 }

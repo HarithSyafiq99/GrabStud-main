@@ -9,6 +9,7 @@ import {
 } from "@/lib/http";
 import { createSession } from "@/lib/auth";
 import { validDocument } from "@/lib/documents";
+import { validProfilePhoto, validVehicle } from "@/lib/profile";
 import type { Role } from "@/lib/types";
 
 export async function POST(request: Request) {
@@ -27,6 +28,14 @@ export async function POST(request: Request) {
       ? String(body.student_id_doc)
       : null;
     const license_doc = body.license_doc ? String(body.license_doc) : null;
+    const profile_photo = body.profile_photo ?? null;
+    const vehicle = {
+      car_colour: String(body.car_colour ?? "").trim(),
+      car_type: String(body.car_type ?? "").trim(),
+      car_plate: String(body.car_plate ?? "")
+        .trim()
+        .toUpperCase(),
+    };
 
     if (!phone_number)
       return jsonError(
@@ -55,6 +64,18 @@ export async function POST(request: Request) {
       );
     }
 
+    if (profile_photo !== null && !validProfilePhoto(profile_photo))
+      return jsonError(
+        "Choose a valid PNG, JPEG or WebP profile photo (max 300KB after processing).",
+      );
+    if (role === "driver" && !profile_photo)
+      return jsonError(
+        "Drivers must add a profile photo so passengers can recognise them.",
+      );
+    if (role === "driver" && !validVehicle(vehicle))
+      return jsonError(
+        "Add your car colour, model/type and a valid plate number.",
+      );
     const db = getDb();
     const exists = await db.execute({
       sql: "SELECT id FROM users WHERE email = ?",
@@ -68,8 +89,8 @@ export async function POST(request: Request) {
 
     await db.execute({
       sql: `INSERT INTO users
-            (id, name, email, phone_number, password_hash, student_number, role, status, student_id_doc, license_doc, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`,
+            (id, name, email, phone_number, password_hash, student_number, role, status, student_id_doc, license_doc, profile_photo, car_colour, car_type, car_plate, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         id,
         name,
@@ -80,6 +101,10 @@ export async function POST(request: Request) {
         role,
         student_id_doc,
         license_doc,
+        profile_photo,
+        role === "driver" ? vehicle.car_colour : "",
+        role === "driver" ? vehicle.car_type : "",
+        role === "driver" ? vehicle.car_plate : "",
         now,
         now,
       ],
@@ -97,6 +122,12 @@ export async function POST(request: Request) {
       phone_number,
       role,
       status: "pending",
+      profile_photo,
+      car_colour: role === "driver" ? vehicle.car_colour : "",
+      car_type: role === "driver" ? vehicle.car_type : "",
+      car_plate: role === "driver" ? vehicle.car_plate : "",
+      onboarding_seen_at: null,
+      session_version: 0,
     });
 
     return NextResponse.json({ ok: true, redirect: "/pending" });

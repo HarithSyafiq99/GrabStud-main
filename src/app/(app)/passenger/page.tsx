@@ -2,6 +2,12 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { LoadingLink as Link } from "@/components/LoadingLink";
 import { BookingOffer } from "@/components/BookingOffer";
+import { CurrentBookings } from "@/components/CurrentBookings";
+import {
+  ArrivalNotice,
+  DriverDetails,
+  PickupRemark,
+} from "@/components/PickupDetails";
 import { BookingProgress } from "@/components/BookingProgress";
 import { RouteLoading } from "@/components/RouteLoading";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -12,6 +18,7 @@ import { ZONES } from "@/lib/zones";
 import { api, localDateTime, rideDate, rideTime } from "@/lib/client";
 import type { BookingRecord } from "@/lib/types";
 export default function Passenger() {
+  const [pickupNote, setPickupNote] = useState("");
   const [from, setFrom] = useState<string>(ZONES[0]),
     [to, setTo] = useState<string>(ZONES[7]),
     [departure, setDeparture] = useState(""),
@@ -52,6 +59,7 @@ export default function Passenger() {
           to_zone: to,
           departure_at: departure ? departure + ":00+08:00" : "",
           payment_method: payment,
+          pickup_note: pickupNote,
         }),
       });
       setMessage(
@@ -59,6 +67,7 @@ export default function Passenger() {
       );
       setError(false);
       setDeparture("");
+      setPickupNote("");
       await load();
     } catch (e) {
       setMessage((e as Error).message);
@@ -105,6 +114,11 @@ export default function Passenger() {
           </p>
         </div>
       </div>
+      {bookings
+        .filter((b) => b.status === "accepted" && b.arrived_at)
+        .map((b) => (
+          <ArrivalNotice key={b.id} booking={b} onUpdated={load} />
+        ))}
       <section className="hero-card">
         <div>
           <span className="eyebrow">YOUR ROUTE. YOUR REQUEST.</span>
@@ -148,75 +162,98 @@ export default function Passenger() {
         ]}
       />
       <Notice message={message} error={error} />
-      <section className="panel create-panel mb-5">
-        <h2 className="section-title">Request a journey</h2>
-        <p className="section-subtitle">
-          Your request is shared with approved drivers. Choose cash or QR to pay
-          your driver directly.
-        </p>
-        <form className="create-form" onSubmit={create}>
-          <label className="field">
-            PICK-UP
-            <select
-              className="input"
-              required
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
+      <div className="passenger-request-grid">
+        <section className="panel create-panel">
+          <h2 className="section-title">Request a journey</h2>
+          <p className="section-subtitle">
+            Your request is shared with approved drivers. Choose cash or QR to
+            pay your driver directly.
+          </p>
+          <form className="create-form" onSubmit={create}>
+            <label className="field">
+              PICK-UP
+              <select
+                className="input"
+                required
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+              >
+                {ZONES.map((z) => (
+                  <option key={z}>{z}</option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              DESTINATION
+              <select
+                className="input"
+                required
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+              >
+                {ZONES.map((z) => (
+                  <option key={z}>{z}</option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              DATE & TIME - MALAYSIA
+              <input
+                className="input"
+                type="datetime-local"
+                required
+                min={localDateTime()}
+                value={departure}
+                onChange={(e) => setDeparture(e.target.value)}
+              />
+            </label>
+            <label className="field">
+              PAYMENT METHOD
+              <select
+                className="input"
+                value={payment}
+                onChange={(e) => setPayment(e.target.value)}
+              >
+                <option value="cash">Cash</option>
+                <option value="qr">QR pay</option>
+              </select>
+            </label>
+            <label className="field col-span-full">
+              Pickup remarks (optional)
+              <textarea
+                className="input"
+                rows={2}
+                maxLength={300}
+                value={pickupNote}
+                onChange={(e) => setPickupNote(e.target.value)}
+                placeholder="e.g. Main gate, beside the security booth"
+              />
+              <small className="muted normal-case">
+                Tell your driver which entrance or landmark to look for.{" "}
+                {pickupNote.length}/300
+              </small>
+            </label>
+            {from === to ? (
+              <p className="text-xs text-rose-600 col-span-full">
+                Choose different pickup and destination zones.
+              </p>
+            ) : null}
+            <button
+              className="btn btn-primary col-span-full"
+              disabled={!!busy || from === to}
             >
-              {ZONES.map((z) => (
-                <option key={z}>{z}</option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            DESTINATION
-            <select
-              className="input"
-              required
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-            >
-              {ZONES.map((z) => (
-                <option key={z}>{z}</option>
-              ))}
-            </select>
-          </label>
-          <label className="field">
-            DATE & TIME - MALAYSIA
-            <input
-              className="input"
-              type="datetime-local"
-              required
-              min={localDateTime()}
-              value={departure}
-              onChange={(e) => setDeparture(e.target.value)}
-            />
-          </label>
-          <label className="field">
-            PAYMENT METHOD
-            <select
-              className="input"
-              value={payment}
-              onChange={(e) => setPayment(e.target.value)}
-            >
-              <option value="cash">Cash</option>
-              <option value="qr">QR pay</option>
-            </select>
-          </label>
-          {from === to ? (
-            <p className="text-xs text-rose-600 col-span-full">
-              Choose different pickup and destination zones.
-            </p>
-          ) : null}
-          <button
-            className="btn btn-primary col-span-full"
-            disabled={!!busy || from === to}
-          >
-            <Icon name="plus" size={16} />
-            {busy === "create" ? "Posting..." : "Post booking request"}
-          </button>
-        </form>
-      </section>
+              <Icon name="plus" size={16} />
+              {busy === "create" ? "Posting..." : "Post booking request"}
+            </button>
+          </form>
+        </section>
+        <CurrentBookings
+          bookings={bookings}
+          loading={loading}
+          disabled={!!busy}
+          onRefresh={load}
+        />
+      </div>
       <div className="section-row">
         <div>
           <h2 className="section-title">My active requests</h2>
@@ -236,7 +273,12 @@ export default function Passenger() {
           const live =
             b.ride_id == null || ["open", "full"].includes(b.ride_status ?? "");
           return (
-            <article className="panel booking-item" key={b.id}>
+            <article
+              className="panel booking-item"
+              key={b.id}
+              id={`booking-${b.id}`}
+              tabIndex={-1}
+            >
               <div>
                 <h3>
                   {b.from_zone} to {b.to_zone}
@@ -248,19 +290,14 @@ export default function Passenger() {
                 <div className="mt-2">
                   <StatusBadge status={b.status} />
                 </div>
-                <p className="text-xs mt-2">
-                  {b.driver_name
-                    ? "Driver: " + b.driver_name
-                    : "Waiting for a driver to choose your request."}
-                </p>
-                {b.driver_phone ? (
-                  <a
-                    className="text-xs text-lilac-deep"
-                    href={"tel:" + b.driver_phone}
-                  >
-                    {b.driver_phone}
-                  </a>
-                ) : null}
+                {b.driver_name ? (
+                  <DriverDetails booking={b} />
+                ) : (
+                  <p className="text-xs mt-2">
+                    Waiting for a driver to choose your request.
+                  </p>
+                )}
+                <PickupRemark booking={b} onUpdated={load} editable />
                 {b.status === "accepted" ? (
                   <p className="text-xs mt-2">
                     Agreed fare: RM {(Number(b.quoted_price) / 100).toFixed(2)}

@@ -6,10 +6,18 @@ import { BookingProgress } from "@/components/BookingProgress";
 import { AuthPanel } from "@/components/AuthPanel";
 import { Brand } from "@/components/Brand";
 import { Dropzone } from "@/components/Dropzone";
+import { ProfilePhotoPicker } from "@/components/ProfilePhotoPicker";
+import { VehicleFields } from "@/components/VehicleFields";
 import { Icon } from "@/components/Icon";
 import { Notice } from "@/components/UI";
 import { api } from "@/lib/client";
 export default function RegisterPage() {
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [vehicle, setVehicle] = useState({
+    car_colour: "",
+    car_type: "",
+    car_plate: "",
+  });
   const router = useRouter();
   const [navigating, startNavigation] = useTransition();
   const [role, setRole] = useState<"passenger" | "driver">("passenger"),
@@ -25,6 +33,10 @@ export default function RegisterPage() {
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (busy || navigating) return;
+    if (role === "driver" && !photo) {
+      setError("Add a profile photo so passengers can recognise you.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -39,6 +51,8 @@ export default function RegisterPage() {
           password,
           student_id_doc: id,
           license_doc: role === "driver" ? license : null,
+          profile_photo: photo,
+          ...(role === "driver" ? vehicle : {}),
         }),
       });
       startNavigation(() => {
@@ -79,6 +93,14 @@ export default function RegisterPage() {
                 <span className="capitalize">{r}</span>
               </button>
             ))}
+          </div>
+          <div className="my-4">
+            <ProfilePhotoPicker
+              value={photo}
+              onChange={setPhoto}
+              required={role === "driver"}
+              name={name}
+            />
           </div>
           <label className="field">
             Full name
@@ -154,6 +176,9 @@ export default function RegisterPage() {
               />
             </label>
           </div>
+          {role === "driver" ? (
+            <VehicleFields value={vehicle} onChange={setVehicle} />
+          ) : null}
           <div className="mt-5 space-y-3">
             <Dropzone label="Student ID" required onFile={setId} />
             {role === "driver" ? (

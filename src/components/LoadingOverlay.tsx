@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
-import { lockPageScroll } from "@/lib/loading";
+import { lockPageBackground, lockPageScroll } from "@/lib/loading";
 import { Brand } from "./Brand";
 import { Icon } from "./Icon";
 
@@ -68,21 +68,9 @@ export function LoadingOverlay({
   useEffect(() => {
     if (!active) return;
     const previousFocus = document.activeElement as HTMLElement | null;
-    const background = new Map<HTMLElement, boolean>();
-    const blockBackground = () => {
-      for (const node of document.body.children) {
-        if (
-          !(node instanceof HTMLElement) ||
-          node.classList.contains("booking-progress")
-        )
-          continue;
-        if (!background.has(node)) background.set(node, node.inert);
-        node.inert = true;
-      }
-    };
-    blockBackground();
-    const observer = new MutationObserver(blockBackground);
-    observer.observe(document.body, { childList: true });
+    const releaseBackground = lockPageBackground((node) =>
+      node.classList.contains("booking-progress"),
+    );
     const releaseScroll = lockPageScroll();
     panelRef.current?.focus({ preventScroll: true });
     const keepFocus = (event: FocusEvent) => {
@@ -95,11 +83,8 @@ export function LoadingOverlay({
     };
     document.addEventListener("focusin", keepFocus, true);
     return () => {
-      observer.disconnect();
+      releaseBackground();
       document.removeEventListener("focusin", keepFocus, true);
-      background.forEach((inert, node) => {
-        node.inert = inert;
-      });
       releaseScroll();
       if (previousFocus?.isConnected)
         previousFocus.focus({ preventScroll: true });

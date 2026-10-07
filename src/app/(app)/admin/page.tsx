@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Icon } from "@/components/Icon";
+import { Avatar } from "@/components/Avatar";
+import { AdminUserEditor } from "@/components/AdminUserEditor";
 import { ActionButton, ACTION_SUCCESS_MS } from "@/components/ActionButton";
 import { BookingProgress } from "@/components/BookingProgress";
 import { RouteLoading } from "@/components/RouteLoading";
@@ -10,7 +12,8 @@ import { Notice, Stats, Empty } from "@/components/UI";
 import { api } from "@/lib/client";
 import type { UserRecord } from "@/lib/types";
 export default function Admin() {
-  const [tab, setTab] = useState("pending"),
+  const [tab, setTab] = useState("all"),
+    [editing, setEditing] = useState<UserRecord | null>(null),
     [users, setUsers] = useState<UserRecord[]>([]),
     [counts, setCounts] = useState<Record<string, number>>({}),
     [query, setQuery] = useState(""),
@@ -118,7 +121,7 @@ export default function Admin() {
           <span className="eyebrow">A COMMUNITY BUILT ON TRUST</span>
           <h1 className="mt-2">Keep campus connected.</h1>
           <p>
-            Review documents and welcome verified students to the community.
+            Manage user accounts, edit details and review student documents.
           </p>
         </div>
         <button className="btn btn-secondary" onClick={load}>
@@ -148,21 +151,23 @@ export default function Admin() {
       <Notice message={message} error={error} />
       <div className="table-tools">
         <div className="tabs">
-          {["pending", "approved", "rejected"].map((t) => (
+          {["all", "pending", "approved", "rejected"].map((t) => (
             <button
               className={tab === t ? "active" : ""}
               aria-pressed={tab === t}
               onClick={() => setTab(t)}
               key={t}
             >
-              <span className="capitalize">{t}</span>
+              <span className="capitalize">
+                {t === "all" ? "All users" : t}
+              </span>
               <span className="text-[9px]">{counts[t] ?? 0}</span>
             </button>
           ))}
         </div>
         <input
           className="input"
-          aria-label="Search students"
+          aria-label="Search users"
           placeholder="Search name, email or student number…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -172,12 +177,12 @@ export default function Admin() {
         <table className="data-table mobile-card-table">
           <thead>
             <tr>
-              <th>STUDENT</th>
+              <th>USER</th>
               <th>ROLE</th>
               <th>STUDENT ID</th>
               <th>LICENSE</th>
               <th>STATUS</th>
-              <th>REVIEW</th>
+              <th>ACTIONS</th>
             </tr>
           </thead>
           <tbody>
@@ -186,13 +191,35 @@ export default function Admin() {
                 <tr key={u.id}>
                   <td data-label="Student" className="mobile-card-title">
                     <div className="flex gap-3 items-center">
-                      <span className="avatar">{u.name[0]}</span>
+                      {u.profile_photo ? (
+                        <button
+                          className="review-photo"
+                          aria-label={`View ${u.name}'s profile photo`}
+                          onClick={() =>
+                            setPreview({
+                              url: u.profile_photo!,
+                              title: `${u.name} · Profile photo`,
+                            })
+                          }
+                        >
+                          <Avatar name={u.name} photo={u.profile_photo} />
+                        </button>
+                      ) : (
+                        <Avatar name={u.name} />
+                      )}
                       <div>
                         <p>{u.name}</p>
                         <small>
                           {u.student_number} · {u.email}
                           <br />
                           {u.phone_number || "Phone number not added"}
+                          {u.role === "driver" ? (
+                            <>
+                              <br />
+                              {u.car_colour} · {u.car_type} ·{" "}
+                              {u.car_plate || "Car details not added"}
+                            </>
+                          ) : null}
                         </small>
                       </div>
                     </div>
@@ -209,43 +236,53 @@ export default function Admin() {
                   <td data-label="Status">
                     <StatusBadge status={u.status} />
                   </td>
-                  <td data-label="Review" className="mobile-card-actions">
-                    {u.status === "pending" ? (
-                      <div className="action-group">
-                        <ActionButton
-                          loadingLabel="Approving…"
-                          successLabel="Approved!"
-                          pending={busy === u.id && busyAction === "approve"}
-                          success={successful === u.id}
-                          disabled={!!busy}
-                          onClick={() => act(u.id, "approve")}
-                        >
-                          Approve
-                        </ActionButton>
-                        <button
-                          className="btn btn-secondary"
-                          disabled={!!busy}
-                          onClick={() => act(u.id, "reject")}
-                        >
-                          {busy === u.id && busyAction === "reject"
-                            ? "Declining…"
-                            : "Decline"}
-                        </button>
-                      </div>
-                    ) : (
-                      "—"
-                    )}
+                  <td data-label="Actions" className="mobile-card-actions">
+                    <div className="admin-user-actions">
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        disabled={!!busy}
+                        onClick={() => setEditing(u)}
+                        aria-label={`Edit ${u.name}`}
+                      >
+                        <Icon name="edit" size={15} />
+                        Edit user
+                      </button>
+                      {u.status === "pending" && u.role !== "admin" ? (
+                        <div className="action-group">
+                          <ActionButton
+                            loadingLabel="Approving…"
+                            successLabel="Approved!"
+                            pending={busy === u.id && busyAction === "approve"}
+                            success={successful === u.id}
+                            disabled={!!busy}
+                            onClick={() => act(u.id, "approve")}
+                          >
+                            Approve
+                          </ActionButton>
+                          <button
+                            className="btn btn-secondary"
+                            disabled={!!busy}
+                            onClick={() => act(u.id, "reject")}
+                          >
+                            {busy === u.id && busyAction === "reject"
+                              ? "Declining…"
+                              : "Decline"}
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               ))}
           </tbody>
         </table>
         {loading ? (
-          <RouteLoading label="Loading student approvals…" />
+          <RouteLoading label="Loading user accounts…" />
         ) : !filtered.length ? (
           <Empty
             title="All clear here."
-            text="No students match this view."
+            text="No users match this view."
             icon="shield"
           />
         ) : null}
@@ -254,6 +291,18 @@ export default function Admin() {
         Drivers require both a Student ID and a driving license. Review each
         document before approving.
       </p>
+      {editing ? (
+        <AdminUserEditor
+          key={editing.id}
+          user={editing}
+          onClose={() => setEditing(null)}
+          onSaved={async (name) => {
+            setMessage(`${name}’s account was updated.`);
+            setError(false);
+            await load();
+          }}
+        />
+      ) : null}
       {preview ? (
         <div className="modal-backdrop" onClick={() => setPreview(null)}>
           <div

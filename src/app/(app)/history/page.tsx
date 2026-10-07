@@ -173,6 +173,16 @@ export default function History() {
                         <a href={"tel:" + r.driver_phone}>{r.driver_phone}</a>
                       </small>
                     ) : null}
+                    {role === "passenger" && r.car_plate ? (
+                      <small>
+                        {r.car_colour} · {r.car_type} · {r.car_plate}
+                      </small>
+                    ) : null}
+                    {r.pickup_note ? (
+                      <small className="history-pickup">
+                        Pickup: {r.pickup_note}
+                      </small>
+                    ) : null}
                     {role === "admin" ? (
                       <small>
                         {r.passenger_phone} / {r.driver_phone}

@@ -18,10 +18,11 @@ function requestLabel(url: string, method: string) {
   if (url.includes("/admin/logs")) return "Refreshing community activity…";
   if (url.includes("/admin/users"))
     return method === "GET"
-      ? "Refreshing student approvals…"
+      ? "Refreshing user accounts…"
       : "Updating this application…";
   if (url.includes("/admin/overview")) return "Refreshing the dashboard…";
   if (url.includes("/history")) return "Refreshing booking history…";
+  if (url.includes("/wallet")) return "Refreshing your wallet…";
   if (url.includes("/bookings"))
     return method === "GET" ? "Refreshing journeys…" : "Updating your booking…";
   return "Loading your update…";

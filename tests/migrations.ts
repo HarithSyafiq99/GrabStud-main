@@ -6,15 +6,17 @@ import { join } from "node:path";
 import { createClient } from "@libsql/client";
 import { SCHEMA_SQL } from "../src/lib/schema";
 import { initializeSchema } from "../src/lib/migrations";
+const previousSchema = SCHEMA_SQL.replace(
+  /^  (session_version|profile_photo|car_colour|car_type|car_plate|onboarding_seen_at|pickup_note|arrived_at|arrival_acknowledged_at).*\n/gm,
+  "",
+);
 
 test("legacy migration preserves accounts, accepted fares, pending requests and seat counts", async () => {
   const dir = await mkdtemp(join(tmpdir(), "grabstudent-migration-"));
   const db = createClient({ url: "file:" + join(dir, "migration.db") });
   try {
-    const legacy = SCHEMA_SQL.replace(
-      "  phone_number TEXT NOT NULL DEFAULT '',\n",
-      "",
-    )
+    const legacy = previousSchema
+      .replace("  phone_number TEXT NOT NULL DEFAULT '',\n", "")
       .replace("  quoted_price INTEGER CHECK (quoted_price > 0),\n", "")
       .replace(
         "  ride_id TEXT REFERENCES rides(id) ON DELETE CASCADE,",
@@ -74,6 +76,7 @@ test("legacy migration preserves accounts, accepted fares, pending requests and 
     assert.equal(demo.email, "driver@grabstudent.com");
     assert.equal(demo.phone_number, "+60100000001");
     assert.equal(demo.password_hash, "demo-hash");
+    assert.ok(users.rows.every((u) => Number(u.session_version) === 0));
     const accepted = (
       await db.execute("SELECT * FROM bookings WHERE id='accepted'")
     ).rows[0];
@@ -127,13 +130,15 @@ test("price-offer database upgrades keep offered fares and allow requests withou
   const dir = await mkdtemp(join(tmpdir(), "grabstudent-migration-"));
   const db = createClient({ url: "file:" + join(dir, "offers.db") });
   try {
-    const previous = SCHEMA_SQL.replace(
-      "  ride_id TEXT REFERENCES rides(id) ON DELETE CASCADE,",
-      "  ride_id TEXT NOT NULL REFERENCES rides(id) ON DELETE CASCADE,",
-    ).replace(
-      "  driver_id TEXT REFERENCES users(id),\n  from_zone TEXT NOT NULL,\n  to_zone TEXT NOT NULL,\n  departure_at TEXT NOT NULL,\n",
-      "",
-    );
+    const previous = previousSchema
+      .replace(
+        "  ride_id TEXT REFERENCES rides(id) ON DELETE CASCADE,",
+        "  ride_id TEXT NOT NULL REFERENCES rides(id) ON DELETE CASCADE,",
+      )
+      .replace(
+        "  driver_id TEXT REFERENCES users(id),\n  from_zone TEXT NOT NULL,\n  to_zone TEXT NOT NULL,\n  departure_at TEXT NOT NULL,\n",
+        "",
+      );
     for (const sql of previous
       .split(";")
       .map((s) => s.trim())
@@ -170,6 +175,31 @@ test("price-offer database upgrades keep offered fares and allow requests withou
     assert.equal(Number(offer.quoted_price), 750);
     assert.equal(offer.driver_id, "driver");
     assert.equal(offer.from_zone, "Main Campus");
+    assert.equal(offer.pickup_note, "");
+    assert.equal(offer.arrived_at, null);
+    const upgradedDriver = (
+      await db.execute("SELECT * FROM users WHERE id='driver'")
+    ).rows[0];
+    assert.equal(upgradedDriver.profile_photo, null);
+    assert.equal(upgradedDriver.car_type, "");
+    assert.equal(upgradedDriver.onboarding_seen_at, "2026-01-01");
+    await db.execute(
+      "UPDATE bookings SET pickup_note='Side gate',arrived_at='2026-10-06T01:00:00Z' WHERE id='offer'",
+    );
+    await db.execute(
+      "UPDATE users SET car_type='Myvi',onboarding_seen_at='2026-10-06T01:00:00Z' WHERE id='driver'",
+    );
+    await initializeSchema(db);
+    assert.equal(
+      (await db.execute("SELECT pickup_note FROM bookings WHERE id='offer'"))
+        .rows[0].pickup_note,
+      "Side gate",
+    );
+    assert.equal(
+      (await db.execute("SELECT car_type FROM users WHERE id='driver'")).rows[0]
+        .car_type,
+      "Myvi",
+    );
     assert.equal(offer.to_zone, "Library");
     assert.equal(
       Number(
