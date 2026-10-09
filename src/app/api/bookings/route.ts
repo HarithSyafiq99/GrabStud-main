@@ -3,7 +3,7 @@ import { ensureSchema, getDb, newId, nowIso } from "@/lib/db";
 import { getSession, requireApproved, requireRole } from "@/lib/auth";
 import { handleError, jsonError } from "@/lib/http";
 import { BOOKING_SELECT } from "@/lib/bookings";
-import { ZONES } from "@/lib/zones";
+import { parseLocationPin, validLocationName } from "@/lib/locations";
 export async function GET(request: Request) {
   try {
     await ensureSchema();
@@ -12,6 +12,7 @@ export async function GET(request: Request) {
     );
     const query = new URL(request.url).searchParams;
     const available = user.role === "driver" && query.get("mine") !== "1";
+    const latest = user.role === "passenger" && query.get("latest") === "1";
     let sql = BOOKING_SELECT;
     const args: string[] = [];
     if (available) {
@@ -24,8 +25,8 @@ export async function GET(request: Request) {
       ]) {
         const value = query.get(parameter);
         if (value) {
-          sql += " AND b." + column + "=?";
-          args.push(value);
+          sql += " AND instr(lower(b." + column + "),lower(?))>0";
+          args.push(value.trim());
         }
       }
       const date = query.get("date");
@@ -37,11 +38,15 @@ export async function GET(request: Request) {
       sql +=
         " WHERE " +
         (user.role === "driver" ? "b.driver_id" : "b.passenger_id") +
-        "=? AND b.status IN ('pending','offered','accepted')";
+        "=?" +
+        (latest ? "" : " AND b.status IN ('pending','offered','accepted')");
       args.push(user.id);
     }
     const result = await getDb().execute({
-      sql: sql + " ORDER BY b.departure_at ASC,b.created_at ASC",
+      sql:
+        sql +
+        " ORDER BY b.created_at DESC,b.id DESC" +
+        (latest ? " LIMIT 1" : ""),
       args,
     });
     return NextResponse.json({ bookings: result.rows });
@@ -56,14 +61,32 @@ export async function POST(request: Request) {
       requireRole(await getSession(), ["passenger"]),
     );
     const body = await request.json(),
-      from = String(body.from_zone ?? ""),
-      to = String(body.to_zone ?? "");
+      fromInput = body.from_zone,
+      toInput = body.to_zone;
+    if (!validLocationName(fromInput) || !validLocationName(toInput))
+      return jsonError(
+        "Enter a pickup and destination name with 2 to 160 characters.",
+      );
+    const from = fromInput.trim(),
+      to = toInput.trim();
+    let pickup, destination;
+    try {
+      pickup = parseLocationPin(body.pickup_lat, body.pickup_lng);
+      destination = parseLocationPin(
+        body.destination_lat,
+        body.destination_lng,
+      );
+    } catch (error) {
+      return jsonError((error as Error).message);
+    }
     if (
-      !ZONES.includes(from as (typeof ZONES)[number]) ||
-      !ZONES.includes(to as (typeof ZONES)[number])
+      (pickup &&
+        destination &&
+        pickup.lat === destination.lat &&
+        pickup.lng === destination.lng) ||
+      (from.toLowerCase() === to.toLowerCase() && (!pickup || !destination))
     )
-      return jsonError("Choose a valid pickup and destination.");
-    if (from === to) return jsonError("Pickup and destination must differ.");
+      return jsonError("Choose different pickup and destination locations.");
     const departure = new Date(String(body.departure_at ?? ""));
     if (Number.isNaN(departure.getTime()) || departure.getTime() <= Date.now())
       return jsonError("Choose a departure time later than the current time.");
@@ -71,6 +94,16 @@ export async function POST(request: Request) {
     if (!["cash", "qr"].includes(payment))
       return jsonError("Choose cash or QR payment.");
     const pickupNote = body.pickup_note ?? "";
+    const passengerCount =
+      body.passenger_count === undefined ? 1 : body.passenger_count;
+    if (
+      !Number.isInteger(passengerCount) ||
+      passengerCount < 1 ||
+      passengerCount > 4
+    )
+      return jsonError(
+        "Choose between 1 and 4 passengers, including yourself.",
+      );
     if (typeof pickupNote !== "string" || pickupNote.trim().length > 300)
       return jsonError(
         "Pickup remarks must be text with at most 300 characters.",
@@ -78,8 +111,17 @@ export async function POST(request: Request) {
     const tx = await getDb().transaction("write");
     try {
       const existing = await tx.execute({
-        sql: "SELECT id FROM bookings WHERE passenger_id=? AND from_zone=? AND to_zone=? AND departure_at=? AND status IN ('pending','offered','accepted')",
-        args: [user.id, from, to, departure.toISOString()],
+        sql: "SELECT id FROM bookings WHERE passenger_id=? AND lower(from_zone)=lower(?) AND lower(to_zone)=lower(?) AND departure_at=? AND pickup_lat IS ? AND pickup_lng IS ? AND destination_lat IS ? AND destination_lng IS ? AND status IN ('pending','offered','accepted')",
+        args: [
+          user.id,
+          from,
+          to,
+          departure.toISOString(),
+          pickup?.lat ?? null,
+          pickup?.lng ?? null,
+          destination?.lat ?? null,
+          destination?.lng ?? null,
+        ],
       });
       if (existing.rows.length) {
         await tx.rollback();
@@ -92,15 +134,20 @@ export async function POST(request: Request) {
         now = nowIso();
       // Passenger input cannot assign a driver, confirm a booking or set its price.
       await tx.execute({
-        sql: "INSERT INTO bookings (id,passenger_id,from_zone,to_zone,departure_at,status,payment_method,pickup_note,created_at,updated_at) VALUES (?,?,?,?,?,'pending',?,?,?,?)",
+        sql: "INSERT INTO bookings (id,passenger_id,passenger_count,from_zone,to_zone,departure_at,status,payment_method,pickup_note,pickup_lat,pickup_lng,destination_lat,destination_lng,created_at,updated_at) VALUES (?,?,?,?,?,?,'pending',?,?,?,?,?,?,?,?)",
         args: [
           id,
           user.id,
+          passengerCount,
           from,
           to,
           departure.toISOString(),
           payment,
           pickupNote.trim(),
+          pickup?.lat ?? null,
+          pickup?.lng ?? null,
+          destination?.lat ?? null,
+          destination?.lng ?? null,
           now,
           now,
         ],
@@ -111,7 +158,14 @@ export async function POST(request: Request) {
           newId(),
           user.id,
           "REQUEST_BOOKING",
-          from + " to " + to + " at " + departure.toISOString(),
+          from +
+            " to " +
+            to +
+            " at " +
+            departure.toISOString() +
+            " · " +
+            passengerCount +
+            " passenger(s)",
           now,
         ],
       });

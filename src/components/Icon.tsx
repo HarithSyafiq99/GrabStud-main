@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 const paths: Record<string, string> = {
+  star: "M12 3l2.8 5.7 6.3.9-4.5 4.4 1.1 6.2-5.7-3-5.7 3 1.1-6.2L3.2 9.6l6.3-.9z",
   edit: "M16 3l5 5 M4 20l4-1 13-13a2.8 2.8 0 0 0-4-4L4 15l-1 6 5-2 M12 21h9",
   mail: "M3 5h18v14H3z M3 5l9 7 9-7",
   key: "M15 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0 M9 11l-6 9h4v-3h3v-3l2-2",

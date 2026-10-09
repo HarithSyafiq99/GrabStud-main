@@ -198,8 +198,8 @@ export async function PATCH(
                   : "cancelled",
         now = nowIso();
       await tx.execute({
-        sql: "UPDATE bookings SET status=?,driver_id=?,quoted_price=?,arrived_at=NULL,arrival_acknowledged_at=NULL,updated_at=? WHERE id=?",
-        args: [status, driverId, quote, now, id],
+        sql: "UPDATE bookings SET status=?,driver_id=?,quoted_price=?,arrived_at=CASE WHEN ?='completed' THEN arrived_at ELSE NULL END,arrival_acknowledged_at=CASE WHEN ?='completed' THEN arrival_acknowledged_at ELSE NULL END,updated_at=? WHERE id=?",
+        args: [status, driverId, quote, status, status, now, id],
       });
       await tx.execute({
         sql: "INSERT INTO audit_logs VALUES (?,?,?,?,?)",

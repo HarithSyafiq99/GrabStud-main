@@ -30,8 +30,17 @@ export function WalletClient() {
   }, []);
   useEffect(() => {
     void load();
-    const timer = setInterval(() => void load(true), 60000);
-    return () => clearInterval(timer);
+    const refresh = () => {
+      if (!document.hidden) void load(true);
+    };
+    const timer = setInterval(refresh, 20000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, [load]);
   const current = data?.periods[period];
   return (
@@ -143,9 +152,10 @@ export function WalletClient() {
                 ))}
               </div>
               <p className="wallet-note">
-                Includes booked journeys after departure and completed journeys.
-                Cash and QR payments are collected directly; these totals do not
-                confirm that payment was received.
+                Fares are recorded when you tap I’ve arrived at pickup. Past
+                completed journeys are also included. Cash and QR payments are
+                collected directly; these totals do not confirm that payment was
+                received.
               </p>
             </div>
           </section>
@@ -154,7 +164,7 @@ export function WalletClient() {
               <div>
                 <h2 className="section-title">Recent journey fares</h2>
                 <p className="section-subtitle">
-                  Your latest journeys after departure.
+                  Your latest fares recorded at pickup.
                 </p>
               </div>
             </div>
@@ -170,7 +180,7 @@ export function WalletClient() {
                         {item.from_zone} → {item.to_zone}
                       </strong>
                       <p>
-                        {rideDate(item.departure_at)} ·{" "}
+                        {rideDate(item.recorded_at)} ·{" "}
                         {item.payment_method === "cash" ? "Cash" : "QR payment"}
                       </p>
                     </div>
@@ -183,7 +193,7 @@ export function WalletClient() {
             ) : (
               <Empty
                 title="Your first journey starts the story."
-                text="Fares appear here after a booked journey’s departure time."
+                text="Tap I’ve arrived on a booked journey to record its agreed fare here."
                 icon="wallet"
               />
             )}

@@ -39,6 +39,7 @@ export type WalletData = {
     from_zone: string;
     to_zone: string;
     departure_at: string;
+    recorded_at: string;
     quoted_price: number;
     payment_method: string;
   }[];

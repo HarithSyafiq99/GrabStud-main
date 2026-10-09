@@ -8,6 +8,8 @@ import { RouteLoading } from "@/components/RouteLoading";
 import { FareOfferForm } from "@/components/FareOfferForm";
 import { PickupRemark, DriverArrival } from "@/components/PickupDetails";
 import { Avatar } from "@/components/Avatar";
+import { BookingLocations } from "@/components/BookingLocations";
+import { PassengerCount } from "@/components/PassengerCount";
 import { useCurrentUser } from "@/components/UserContext";
 import { Notice, Stats, Empty } from "@/components/UI";
 import { ZONES, getFlatRate } from "@/lib/zones";
@@ -34,18 +36,30 @@ export default function Driver() {
     [message, setMessage] = useState(""),
     [error, setError] = useState(false),
     [cancel, setCancel] = useState<string | null>(null);
+  const [ratings, setRatings] = useState<{
+    average: number | null;
+    count: number;
+    reviews: {
+      id: string;
+      rating_score: number;
+      rating_feedback: string;
+      rated_at: string;
+    }[];
+  }>({ average: null, count: 0, reviews: [] });
   const load = useCallback(
     async (background = false) => {
       const feedback = background ? "background" : "blocking";
       try {
-        const [requests, assigned] = await Promise.all([
+        const [requests, assigned, reviews] = await Promise.all([
           api<{ bookings: BookingRecord[] }>("/api/bookings?" + filters, {
             feedback,
           }),
           api<{ bookings: BookingRecord[] }>("/api/bookings?mine=1", {
             feedback,
           }),
+          api<typeof ratings>("/api/ratings", { feedback }),
         ]);
+        setRatings(reviews);
         setAvailable(requests.bookings);
         setMine(assigned.bookings.filter((b) => b.status !== "pending"));
       } catch (e) {
@@ -126,6 +140,7 @@ export default function Driver() {
         />
         <div>
           <h3>{b.passenger_name}</h3>
+          <PassengerCount count={b.passenger_count} />
           <p className="text-xs muted">
             {b.from_zone} to <strong>{b.to_zone}</strong>
             <br />
@@ -179,6 +194,37 @@ export default function Driver() {
           Verified driver
         </span>
       </div>
+      <section
+        className="panel driver-rating-summary"
+        aria-label="Your driver ratings"
+      >
+        <details>
+          <summary>
+            <Icon name="star" size={20} />
+            <strong>
+              {ratings.count
+                ? Number(ratings.average).toFixed(1) + "/5"
+                : "No ratings yet"}
+            </strong>
+            <span>
+              · {ratings.count} {ratings.count === 1 ? "rating" : "ratings"}
+            </span>
+          </summary>
+          {ratings.reviews.length ? (
+            ratings.reviews.map((review) => (
+              <div key={review.id} className="rating-review">
+                <strong>{review.rating_score}/5 stars</strong>
+                <small className="muted"> · {rideDate(review.rated_at)}</small>
+                <p>{review.rating_feedback || "No written feedback."}</p>
+              </div>
+            ))
+          ) : (
+            <p className="text-xs muted mt-2">
+              Passenger feedback will appear here after completed journeys.
+            </p>
+          )}
+        </details>
+      </section>
       <Stats
         items={[
           {
@@ -202,29 +248,25 @@ export default function Driver() {
       <form className="panel filter-panel" onSubmit={filter}>
         <label className="field">
           PICK-UP
-          <select
+          <input
             className="input"
             value={from}
             onChange={(e) => setFrom(e.target.value)}
-          >
-            <option value="">Any pickup</option>
-            {ZONES.map((z) => (
-              <option key={z}>{z}</option>
-            ))}
-          </select>
+            placeholder="Any pickup or place name"
+            list="driver-location-suggestions"
+            maxLength={160}
+          />
         </label>
         <label className="field">
           DESTINATION
-          <select
+          <input
             className="input"
             value={to}
             onChange={(e) => setTo(e.target.value)}
-          >
-            <option value="">Any destination</option>
-            {ZONES.map((z) => (
-              <option key={z}>{z}</option>
-            ))}
-          </select>
+            placeholder="Any destination or place name"
+            list="driver-location-suggestions"
+            maxLength={160}
+          />
         </label>
         <label className="field">
           DEPARTURE DATE
@@ -240,6 +282,11 @@ export default function Driver() {
           Find passengers
         </button>
       </form>
+      <datalist id="driver-location-suggestions">
+        {ZONES.map((zone) => (
+          <option key={zone} value={zone} />
+        ))}
+      </datalist>
       <div className="section-row">
         <div>
           <h2 className="section-title">Available passenger requests</h2>
@@ -269,10 +316,17 @@ export default function Driver() {
             <div className="booking-person">
               {info(b)}
               <PickupRemark booking={b} onUpdated={load} />
+              <BookingLocations booking={b} />
             </div>
             <FareOfferForm
               passengerName={b.passenger_name ?? "passenger"}
-              suggestedPrice={getFlatRate(b.from_zone, b.to_zone)}
+              passengerCount={b.passenger_count}
+              suggestedPrice={
+                ZONES.some((zone) => zone === b.from_zone) &&
+                ZONES.some((zone) => zone === b.to_zone)
+                  ? getFlatRate(b.from_zone, b.to_zone)
+                  : null
+              }
               disabled={!!busy || !profileReady}
               pending={busy === b.id}
               success={successful === b.id}
@@ -311,6 +365,7 @@ export default function Driver() {
               <div className="booking-person">
                 {info(b)}
                 <PickupRemark booking={b} onUpdated={load} />
+                <BookingLocations booking={b} />
               </div>
               <div className="booking-actions">
                 <StatusBadge status={b.status} />

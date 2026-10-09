@@ -1,26 +1,26 @@
 "use client";
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { LoadingLink as Link } from "@/components/LoadingLink";
-import { BookingOffer } from "@/components/BookingOffer";
 import { CurrentBookings } from "@/components/CurrentBookings";
-import {
-  ArrivalNotice,
-  DriverDetails,
-  PickupRemark,
-} from "@/components/PickupDetails";
+import { ArrivalPopup } from "@/components/ArrivalPopup";
+import { LocationField } from "@/components/LocationField";
+import { PassengerCountPicker } from "@/components/PassengerCount";
+import type { LocationPin } from "@/lib/locations";
 import { BookingProgress } from "@/components/BookingProgress";
-import { RouteLoading } from "@/components/RouteLoading";
-import { StatusBadge } from "@/components/StatusBadge";
 import { CampusScene } from "@/components/CampusScene";
 import { Icon } from "@/components/Icon";
-import { Notice, Stats, Empty } from "@/components/UI";
-import { ZONES } from "@/lib/zones";
-import { api, localDateTime, rideDate, rideTime } from "@/lib/client";
+import { Notice, Stats } from "@/components/UI";
+import { api, localDateTime } from "@/lib/client";
 import type { BookingRecord } from "@/lib/types";
 export default function Passenger() {
   const [pickupNote, setPickupNote] = useState("");
-  const [from, setFrom] = useState<string>(ZONES[0]),
-    [to, setTo] = useState<string>(ZONES[7]),
+  const [passengerCount, setPassengerCount] = useState(1);
+  const [pickupPin, setPickupPin] = useState<LocationPin | null>(null);
+  const [destinationPin, setDestinationPin] = useState<LocationPin | null>(
+    null,
+  );
+  const [from, setFrom] = useState(""),
+    [to, setTo] = useState(""),
     [departure, setDeparture] = useState(""),
     [payment, setPayment] = useState("cash"),
     [bookings, setBookings] = useState<BookingRecord[]>([]),
@@ -29,26 +29,50 @@ export default function Passenger() {
     [message, setMessage] = useState(""),
     [error, setError] = useState(false),
     [cancel, setCancel] = useState<string | null>(null);
+  const [latest, setLatest] = useState<BookingRecord[]>([]);
+  const loadVersion = useRef(0);
   const load = useCallback(async (background = false) => {
+    const version = ++loadVersion.current;
     try {
-      const data = await api<{ bookings: BookingRecord[] }>("/api/bookings", {
-        feedback: background ? "background" : "blocking",
-      });
+      const feedback = background ? "background" : "blocking";
+      const [data, current] = await Promise.all([
+        api<{ bookings: BookingRecord[] }>("/api/bookings", { feedback }),
+        api<{ bookings: BookingRecord[] }>("/api/bookings?latest=1", {
+          feedback,
+        }),
+      ]);
+      if (version !== loadVersion.current) return;
       setBookings(data.bookings);
+      setLatest(current.bookings);
     } catch (e) {
+      if (version !== loadVersion.current) return;
       setMessage((e as Error).message);
       setError(true);
     } finally {
-      setLoading(false);
+      if (version === loadVersion.current) setLoading(false);
     }
   }, []);
   useEffect(() => {
     load();
-    const timer = setInterval(() => load(true), 20000);
-    return () => clearInterval(timer);
+    const refresh = () => {
+      if (!document.hidden) void load(true);
+    };
+    const timer = setInterval(refresh, 10000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, [load]);
   async function create(e: FormEvent) {
     e.preventDefault();
+    if (!pickupPin || !destinationPin) {
+      setMessage("Find or mark both locations on the map before posting.");
+      setError(true);
+      return;
+    }
     setBusy("create");
     setMessage("");
     try {
@@ -60,14 +84,26 @@ export default function Passenger() {
           departure_at: departure ? departure + ":00+08:00" : "",
           payment_method: payment,
           pickup_note: pickupNote,
+          passenger_count: passengerCount,
+          pickup_lat: pickupPin?.lat ?? null,
+          pickup_lng: pickupPin?.lng ?? null,
+          destination_lat: destinationPin?.lat ?? null,
+          destination_lng: destinationPin?.lng ?? null,
         }),
       });
+      ++loadVersion.current;
+      setLatest([]);
       setMessage(
         "Request posted. A driver can choose your journey and send a price for you to review.",
       );
       setError(false);
       setDeparture("");
       setPickupNote("");
+      setPassengerCount(1);
+      setPickupPin(null);
+      setDestinationPin(null);
+      setFrom("");
+      setTo("");
       await load();
     } catch (e) {
       setMessage((e as Error).message);
@@ -95,8 +131,18 @@ export default function Passenger() {
       setBusy("");
     }
   }
+  const sameLocation =
+    pickupPin && destinationPin
+      ? Math.abs(pickupPin.lat - destinationPin.lat) < 0.000001 &&
+        Math.abs(pickupPin.lng - destinationPin.lng) < 0.000001
+      : !!from.trim() && from.trim().toLowerCase() === to.trim().toLowerCase();
   return (
     <div>
+      <ArrivalPopup
+        bookings={latest}
+        onUpdated={load}
+        paused={!!cancel || !!busy}
+      />
       <BookingProgress
         active={!!busy}
         label={
@@ -105,20 +151,27 @@ export default function Passenger() {
             : "Cancelling your booking…"
         }
       />
+      <CurrentBookings
+        bookings={latest}
+        loading={loading}
+        disabled={!!busy}
+        onRefresh={load}
+        onCancel={(id) => {
+          setMessage("");
+          setError(false);
+          setCancel(id);
+        }}
+      />
       <div className="page-heading">
         <div>
           <span className="eyebrow">YOUR EVERYDAY, MADE EASIER</span>
           <h1 className="mt-2">Where do you want to go?</h1>
           <p>
-            Choose your pickup and destination. A driver chooses your request.
+            Enter your pickup and destination addresses, then find or adjust
+            their map pins.
           </p>
         </div>
       </div>
-      {bookings
-        .filter((b) => b.status === "accepted" && b.arrived_at)
-        .map((b) => (
-          <ArrivalNotice key={b.id} booking={b} onUpdated={load} />
-        ))}
       <section className="hero-card">
         <div>
           <span className="eyebrow">YOUR ROUTE. YOUR REQUEST.</span>
@@ -166,36 +219,30 @@ export default function Passenger() {
         <section className="panel create-panel">
           <h2 className="section-title">Request a journey</h2>
           <p className="section-subtitle">
-            Your request is shared with approved drivers. Choose cash or QR to
-            pay your driver directly.
+            Fill in both addresses or choose them on the map. Your driver sees
+            the matching pins, and you pay in cash or QR.
           </p>
           <form className="create-form" onSubmit={create}>
-            <label className="field">
-              PICK-UP
-              <select
-                className="input"
-                required
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-              >
-                {ZONES.map((z) => (
-                  <option key={z}>{z}</option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              DESTINATION
-              <select
-                className="input"
-                required
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-              >
-                {ZONES.map((z) => (
-                  <option key={z}>{z}</option>
-                ))}
-              </select>
-            </label>
+            <LocationField
+              kind="pickup"
+              name={from}
+              pin={pickupPin}
+              onNameChange={setFrom}
+              onPinChange={setPickupPin}
+            />
+            <LocationField
+              kind="destination"
+              name={to}
+              pin={destinationPin}
+              onNameChange={setTo}
+              onPinChange={setDestinationPin}
+              nearby={pickupPin}
+            />
+            <PassengerCountPicker
+              count={passengerCount}
+              onChange={setPassengerCount}
+              disabled={!!busy}
+            />
             <label className="field">
               DATE & TIME - MALAYSIA
               <input
@@ -233,119 +280,28 @@ export default function Passenger() {
                 {pickupNote.length}/300
               </small>
             </label>
-            {from === to ? (
+            {sameLocation ? (
               <p className="text-xs text-rose-600 col-span-full">
-                Choose different pickup and destination zones.
+                Choose different pickup and destination locations.
+              </p>
+            ) : null}
+            {!pickupPin || !destinationPin ? (
+              <p className="text-xs muted col-span-full">
+                Link both addresses to their map pins to post your request.
               </p>
             ) : null}
             <button
               className="btn btn-primary col-span-full"
-              disabled={!!busy || from === to}
+              disabled={
+                !!busy || !!sameLocation || !pickupPin || !destinationPin
+              }
             >
               <Icon name="plus" size={16} />
               {busy === "create" ? "Posting..." : "Post booking request"}
             </button>
           </form>
         </section>
-        <CurrentBookings
-          bookings={bookings}
-          loading={loading}
-          disabled={!!busy}
-          onRefresh={load}
-        />
       </div>
-      <div className="section-row">
-        <div>
-          <h2 className="section-title">My active requests</h2>
-          <p className="section-subtitle">
-            Review offers and keep track of your selected driver.
-          </p>
-        </div>
-        <button className="btn btn-secondary" onClick={() => load()}>
-          Refresh
-        </button>
-      </div>
-      {loading ? (
-        <RouteLoading label="Loading your bookings…" />
-      ) : bookings.length ? (
-        bookings.map((b) => {
-          const future = new Date(b.departure_at).getTime() > Date.now();
-          const live =
-            b.ride_id == null || ["open", "full"].includes(b.ride_status ?? "");
-          return (
-            <article
-              className="panel booking-item"
-              key={b.id}
-              id={`booking-${b.id}`}
-              tabIndex={-1}
-            >
-              <div>
-                <h3>
-                  {b.from_zone} to {b.to_zone}
-                </h3>
-                <p className="text-xs muted mt-2">
-                  {rideDate(b.departure_at)} at {rideTime(b.departure_at)} -{" "}
-                  {b.payment_method.toUpperCase()}
-                </p>
-                <div className="mt-2">
-                  <StatusBadge status={b.status} />
-                </div>
-                {b.driver_name ? (
-                  <DriverDetails booking={b} />
-                ) : (
-                  <p className="text-xs mt-2">
-                    Waiting for a driver to choose your request.
-                  </p>
-                )}
-                <PickupRemark booking={b} onUpdated={load} editable />
-                {b.status === "accepted" ? (
-                  <p className="text-xs mt-2">
-                    Agreed fare: RM {(Number(b.quoted_price) / 100).toFixed(2)}
-                  </p>
-                ) : null}
-                {!future && b.status !== "accepted" ? (
-                  <p className="text-xs muted mt-2">
-                    The requested departure time has passed. Post a new request
-                    for a later time.
-                  </p>
-                ) : null}
-              </div>
-              <div>
-                {b.status === "offered" && future && live ? (
-                  <BookingOffer
-                    id={b.id}
-                    price={b.quoted_price!}
-                    driverId={b.driver_id}
-                    onUpdated={load}
-                    disabled={!!busy}
-                  />
-                ) : null}
-                {future && live ? (
-                  <button
-                    className="btn btn-secondary mt-3"
-                    disabled={!!busy}
-                    onClick={() => {
-                      setMessage("");
-                      setError(false);
-                      setCancel(b.id);
-                    }}
-                  >
-                    Cancel request
-                  </button>
-                ) : null}
-              </div>
-            </article>
-          );
-        })
-      ) : (
-        <div className="panel">
-          <Empty
-            title="Your next journey starts here."
-            text="Choose where you want to go and post your first booking request."
-            icon="car"
-          />
-        </div>
-      )}
       <p className="text-xs muted mt-5">
         <Link className="text-lilac-deep" href="/history">
           View all bookings and journey history

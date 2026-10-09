@@ -17,24 +17,24 @@ const STEPS = {
     {
       icon: "pin",
       title: "Tell us where you’re going",
-      text: "Choose your pickup, destination and departure time. Add a landmark or entrance in Pickup remarks so your driver can find you.",
+      text: "Enter each address and tap Find on map, or mark a point to fill its address automatically. Select how many passengers are travelling, including yourself. Check both pins, add a pickup entrance and choose your departure time.",
     },
     {
       icon: "wallet",
       title: "Review your driver’s offer",
-      text: "A driver chooses your request and sends a fare. Check their photo, car and price, then tap Agree & book when you’re happy.",
+      text: "Your latest request appears at the top in Current Booking; older journeys stay in History. A driver chooses your request and sends a fare. Check their photo, car and price, then tap Agree & book when you’re happy.",
     },
     {
       icon: "bell",
       title: "Meet your driver",
-      text: "Your driver sends a reminder when they arrive. Tap I’m on my way, check the car’s plate number, and pay directly in cash or QR.",
+      text: "Your driver sends a reminder when they arrive. Tap I’m on my way, check the car’s plate number, and pay directly in cash or QR. After the ride finishes, tap Rate your driver to share stars and feedback.",
     },
   ],
   driver: [
     {
       icon: "users",
       title: "Choose a passenger on your route",
-      text: "Add your photo and car details in My profile. Filter passenger requests by pickup and destination, then read their pickup remarks.",
+      text: "Add your photo and car details in My profile. Search passenger requests by place name, check the passenger count and read pickup remarks. Tap View location map to see the passenger's pickup and destination pins.",
     },
     {
       icon: "wallet",
@@ -44,7 +44,7 @@ const STEPS = {
     {
       icon: "pin",
       title: "Send a pickup reminder",
-      text: "Tap I’ve arrived when you reach the pickup point. The passenger can reply I’m on my way. Your Wallet summarises recorded fares by day, week and month.",
+      text: "Tap I’ve arrived when you reach the pickup point. The passenger gets a popup and can reply I’m on my way. The agreed fare is added once to your Wallet’s daily, weekly and monthly totals. Passenger ratings appear on your dashboard after completed rides.",
     },
   ],
 };

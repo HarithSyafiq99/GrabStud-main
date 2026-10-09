@@ -52,6 +52,7 @@ export type BookingRecord = {
   ride_id: string | null;
   driver_id: string | null;
   passenger_id: string;
+  passenger_count: number;
   status: BookingStatus;
   quoted_price: number | null; // Malaysian sen.
   payment_method: PaymentMethod;
@@ -69,8 +70,17 @@ export type BookingRecord = {
   flat_rate?: number;
   driver_name?: string;
   pickup_note: string;
+  pickup_lat: number | null;
+  pickup_lng: number | null;
+  destination_lat: number | null;
+  destination_lng: number | null;
   arrived_at: string | null;
   arrival_acknowledged_at: string | null;
+  rating_score?: number | null;
+  rating_feedback?: string | null;
+  rated_at?: string | null;
+  driver_rating_average?: number | null;
+  driver_rating_count?: number;
   passenger_photo?: string | null;
   driver_photo?: string | null;
   car_colour?: string;

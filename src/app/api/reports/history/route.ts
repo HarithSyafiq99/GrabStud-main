@@ -20,9 +20,9 @@ export async function GET() {
           "=?";
     const result = await getDb().execute({
       sql:
-        "SELECT b.id,b.status,b.payment_method,b.created_at,b.from_zone,b.to_zone,b.departure_at,b.quoted_price/100.0 as fare_rm,d.name as driver_name,p.name as passenger_name FROM bookings b JOIN users p ON p.id=b.passenger_id LEFT JOIN users d ON d.id=b.driver_id" +
+        "SELECT b.id,b.status,b.payment_method,b.created_at,b.from_zone,b.to_zone,b.departure_at,b.quoted_price/100.0 as fare_rm,d.name as driver_name,p.name as passenger_name,b.passenger_count FROM bookings b JOIN users p ON p.id=b.passenger_id LEFT JOIN users d ON d.id=b.driver_id" +
         where +
-        " ORDER BY b.created_at DESC",
+        " ORDER BY b.created_at DESC,b.id DESC",
       args: user.role === "admin" ? [] : [user.id],
     });
     const headers = [
@@ -36,6 +36,7 @@ export async function GET() {
       "fare_rm",
       "driver_name",
       "passenger_name",
+      "passenger_count",
     ];
     const csv = [
       headers.join(","),

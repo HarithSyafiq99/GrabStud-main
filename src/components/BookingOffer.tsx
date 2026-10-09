@@ -59,8 +59,8 @@ export function BookingOffer({
         }
       />
       <p className="text-xs mb-2">
-        Driver offer: <strong>RM {(price / 100).toFixed(2)}</strong> per
-        passenger
+        Driver offer: <strong>RM {(price / 100).toFixed(2)}</strong> total for
+        this booking
       </p>
       <div className="action-group flex-wrap">
         <ActionButton

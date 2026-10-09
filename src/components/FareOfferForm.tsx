@@ -6,6 +6,7 @@ import { Icon } from "./Icon";
 
 export function FareOfferForm({
   passengerName,
+  passengerCount,
   suggestedPrice,
   disabled,
   pending,
@@ -13,7 +14,8 @@ export function FareOfferForm({
   onOffer,
 }: {
   passengerName: string;
-  suggestedPrice: number;
+  passengerCount: number;
+  suggestedPrice: number | null;
   disabled: boolean;
   pending: boolean;
   success: boolean;
@@ -45,26 +47,33 @@ export function FareOfferForm({
         </span>
         <div>
           <h4>Set your fare</h4>
-          <p>Choose the suggestion or enter your own price.</p>
+          <p>
+            {suggestedPrice == null
+              ? "Review the passenger’s map pins and enter your price."
+              : "Choose the suggestion or enter your own price."}
+          </p>
         </div>
       </div>
-      <button
-        className="fare-suggestion"
-        type="button"
-        disabled={disabled || pending || success}
-        aria-pressed={usesSuggestion}
-        onClick={() => {
-          setPrice(suggestedPrice.toFixed(2));
-          setTouched(false);
-          inputRef.current?.focus();
-        }}
-      >
-        <Icon name={usesSuggestion ? "check" : "wallet"} size={16} />
-        Use suggested <strong>RM {suggestedPrice.toFixed(2)}</strong>
-        <Icon name="arrow" size={15} />
-      </button>
+      {suggestedPrice != null ? (
+        <button
+          className="fare-suggestion"
+          type="button"
+          disabled={disabled || pending || success}
+          aria-pressed={usesSuggestion}
+          onClick={() => {
+            setPrice(suggestedPrice.toFixed(2));
+            setTouched(false);
+            inputRef.current?.focus();
+          }}
+        >
+          <Icon name={usesSuggestion ? "check" : "wallet"} size={16} />
+          Use suggested <strong>RM {suggestedPrice.toFixed(2)}</strong>
+          <Icon name="arrow" size={15} />
+        </button>
+      ) : null}
       <label className="field" htmlFor={id}>
-        Your fare per passenger
+        Total fare for {passengerCount}{" "}
+        {passengerCount === 1 ? "passenger" : "passengers"}
       </label>
       <div className="fare-input-wrap">
         <span aria-hidden="true">RM</span>

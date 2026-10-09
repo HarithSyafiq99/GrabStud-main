@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { createClient } from "@libsql/client";
 import { compare, hash } from "bcryptjs";
 import { createServer } from "node:net";
+import { createServer as httpServer } from "node:http";
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 test(
@@ -53,6 +54,31 @@ test(
         s.close(() => resolve(p));
       });
     });
+    const geocoder = httpServer((request, response) => {
+      const parameters = new URL(request.url, "http://localhost");
+      if (parameters.searchParams.get("q") === "Unavailable") {
+        response.writeHead(503).end("Unavailable");
+        return;
+      }
+      response.setHeader("Content-Type", "application/json");
+      response.end(
+        JSON.stringify({
+          features: [
+            {
+              geometry: { coordinates: [101.6865, 3.1341] },
+              properties: {
+                name: "KL Sentral",
+                street: "Jalan Stesen Sentral",
+                city: "Kuala Lumpur",
+                country: "Malaysia",
+              },
+            },
+          ],
+        }),
+      );
+    });
+    await new Promise((resolve) => geocoder.listen(0, "127.0.0.1", resolve));
+    t.after(() => new Promise((resolve) => geocoder.close(resolve)));
     let output = "";
     const proc = spawn(
       process.execPath,
@@ -71,6 +97,7 @@ test(
           AUTH_SECRET: "integration-only-32-character-secret-value",
           NEXT_PUBLIC_DEMO_MODE: "false",
           GRABSTUDENT_DIST_DIR: ".next-test",
+          GEOCODING_BASE_URL: `http://127.0.0.1:${geocoder.address().port}`,
         },
         stdio: ["ignore", "pipe", "pipe"],
       },
@@ -360,6 +387,7 @@ test(
         assert.equal(stored.ride_id, null);
         assert.equal(stored.status, "pending");
         assert.equal(stored.quoted_price, null);
+        assert.equal(stored.passenger_count, 1);
         assert.equal(stored.from_zone, "Main Campus");
         assert.equal(stored.to_zone, "Library");
         assert.equal((await request(p1)).status, 409);
@@ -378,7 +406,9 @@ test(
       "invalid route, past departure and payment details are rejected",
       async () => {
         for (const extra of [
-          { from_zone: "unknown" },
+          { from_zone: " " },
+          { from_zone: 123 },
+          { to_zone: "x".repeat(161) },
           { to_zone: "Main Campus" },
           { departure_at: "invalid" },
           { departure_at: new Date(Date.now() - 60000).toISOString() },
@@ -893,6 +923,7 @@ test(
           403,
         );
         assert.equal((await patch(p1, id, "acknowledge")).status, 409);
+        const walletBeforeArrival = (await driver.request("/api/wallet")).data;
         const responses = await Promise.all([
           patch(driver, id, "arrive"),
           patch(driver, id, "arrive"),
@@ -905,6 +936,21 @@ test(
           (b) => b.id === id,
         );
         assert.ok(booking.arrived_at);
+        const walletAfterArrival = (await driver.request("/api/wallet")).data;
+        for (const period of ["daily", "weekly", "monthly"]) {
+          assert.equal(
+            walletAfterArrival.periods[period].total,
+            walletBeforeArrival.periods[period].total + 800,
+          );
+          assert.equal(
+            walletAfterArrival.periods[period].journeys,
+            walletBeforeArrival.periods[period].journeys + 1,
+          );
+        }
+        assert.equal(
+          walletAfterArrival.recent.find((item) => item.id === id).recorded_at,
+          booking.arrived_at,
+        );
         assert.equal(booking.car_plate, "WXY 4321");
         assert.equal(booking.driver_photo, doc);
         assert.ok(
@@ -929,7 +975,15 @@ test(
           ).arrival_acknowledged_at,
           ack,
         );
+        assert.deepEqual(
+          (await driver.request("/api/wallet")).data.periods,
+          walletAfterArrival.periods,
+        );
         assert.equal((await patch(p1, id, "cancel")).status, 200);
+        assert.deepEqual(
+          (await driver.request("/api/wallet")).data.periods,
+          walletBeforeArrival.periods,
+        );
         assert.equal((await patch(driver, id, "arrive")).status, 409);
         // An older driver can view existing bookings but must complete their profile before offering again.
         await db.execute({
@@ -949,23 +1003,93 @@ test(
       },
     );
     await t.test(
-      "wallet is driver-only and counts elapsed booked/completed fares, excluding offers, cancellations and future trips",
+      "wallet records each arrival once by arrival date, keeps historical completed fares and excludes unarrived bookings",
       async () => {
         assert.equal((await stranger.request("/api/wallet")).status, 401);
         assert.equal((await p1.request("/api/wallet")).status, 403);
         assert.equal((await admin.request("/api/wallet")).status, 403);
         const previous = (await driver.request("/api/wallet")).data;
         const departure = new Date(Date.now() - 60000).toISOString();
-        for (const [id, status, price, method, driverOwner, date] of [
-          ["wallet-cash", "accepted", 1000, "cash", driverId, departure],
-          ["wallet-qr", "completed", 500, "qr", driverId, departure],
-          ["wallet-cancel", "cancelled", 9000, "cash", driverId, departure],
-          ["wallet-offer", "offered", 9000, "cash", driverId, departure],
-          ["wallet-future", "accepted", 9000, "cash", driverId, future],
-          ["wallet-other", "accepted", 9000, "cash", driver2Id, departure],
+        const arrival = new Date().toISOString();
+        const oldArrival = new Date(Date.now() - 40 * 86400000).toISOString();
+        for (const [id, status, price, method, driverOwner, date, arrived] of [
+          [
+            "wallet-cash",
+            "accepted",
+            1000,
+            "cash",
+            driverId,
+            departure,
+            arrival,
+          ],
+          ["wallet-qr", "completed", 500, "qr", driverId, arrival, null],
+          [
+            "wallet-cancel",
+            "cancelled",
+            9000,
+            "cash",
+            driverId,
+            departure,
+            arrival,
+          ],
+          [
+            "wallet-offer",
+            "offered",
+            9000,
+            "cash",
+            driverId,
+            departure,
+            arrival,
+          ],
+          ["wallet-future", "accepted", 9000, "cash", driverId, future, null],
+          [
+            "wallet-other",
+            "accepted",
+            9000,
+            "cash",
+            driver2Id,
+            departure,
+            arrival,
+          ],
+          [
+            "wallet-unarrived",
+            "accepted",
+            9000,
+            "cash",
+            driverId,
+            departure,
+            null,
+          ],
+          [
+            "wallet-early-arrival",
+            "accepted",
+            250,
+            "cash",
+            driverId,
+            future,
+            arrival,
+          ],
+          [
+            "wallet-old-arrival",
+            "accepted",
+            400,
+            "cash",
+            driverId,
+            arrival,
+            oldArrival,
+          ],
+          [
+            "wallet-invalid-future-arrival",
+            "accepted",
+            9000,
+            "cash",
+            driverId,
+            departure,
+            future,
+          ],
         ])
           await db.execute({
-            sql: "INSERT INTO bookings (id,driver_id,passenger_id,from_zone,to_zone,departure_at,status,quoted_price,payment_method,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            sql: "INSERT INTO bookings (id,driver_id,passenger_id,from_zone,to_zone,departure_at,status,quoted_price,payment_method,arrived_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             args: [
               id,
               driverOwner,
@@ -976,6 +1100,7 @@ test(
               status,
               price,
               method,
+              arrived,
               now,
               now,
             ],
@@ -984,11 +1109,11 @@ test(
         for (const period of ["daily", "weekly", "monthly"]) {
           assert.equal(
             result.periods[period].total,
-            previous.periods[period].total + 1500,
+            previous.periods[period].total + 1750,
           );
           assert.equal(
             result.periods[period].cash,
-            previous.periods[period].cash + 1000,
+            previous.periods[period].cash + 1250,
           );
           assert.equal(
             result.periods[period].qr,
@@ -996,10 +1121,15 @@ test(
           );
           assert.equal(
             result.periods[period].journeys,
-            previous.periods[period].journeys + 2,
+            previous.periods[period].journeys + 3,
           );
         }
         assert.ok(result.recent.some((b) => b.id === "wallet-cash"));
+        assert.ok(result.recent.some((b) => b.id === "wallet-early-arrival"));
+        assert.equal(
+          result.recent.find((b) => b.id === "wallet-cash").recorded_at,
+          arrival,
+        );
         assert.ok(
           !result.recent.some((b) =>
             [
@@ -1007,8 +1137,553 @@ test(
               "wallet-offer",
               "wallet-future",
               "wallet-other",
+              "wallet-unarrived",
+              "wallet-invalid-future-arrival",
             ].includes(b.id),
           ),
+        );
+        assert.equal(
+          (await patch(driver, "wallet-cash", "arrive")).status,
+          200,
+        );
+        assert.equal(
+          (await patch(driver, "wallet-cash", "complete")).status,
+          200,
+        );
+        const afterCompletion = (await driver.request("/api/wallet")).data;
+        assert.deepEqual(afterCompletion.periods, result.periods);
+        assert.equal(
+          afterCompletion.recent.find((b) => b.id === "wallet-cash")
+            .recorded_at,
+          arrival,
+        );
+      },
+    );
+    await t.test(
+      "booking and history filters keep newest requests first with stable ties",
+      async () => {
+        const entries = [
+          ["sort-old", "2020-05-01T00:00:00.000Z", "2099-05-01T12:00:00.000Z"],
+          [
+            "sort-tie-a",
+            "2020-05-02T00:00:00.000Z",
+            "2099-05-01T11:00:00.000Z",
+          ],
+          [
+            "sort-tie-z",
+            "2020-05-02T00:00:00.000Z",
+            "2099-05-01T10:00:00.000Z",
+          ],
+          ["sort-new", "2020-05-03T00:00:00.000Z", "2099-05-01T09:00:00.000Z"],
+        ];
+        const expected = ["sort-new", "sort-tie-z", "sort-tie-a", "sort-old"];
+        try {
+          for (const [id, created, departure] of entries)
+            await db.execute({
+              sql: "INSERT INTO bookings (id,passenger_id,from_zone,to_zone,departure_at,status,payment_method,created_at,updated_at) VALUES (?,?,'Sort pickup','Sort destination',?,'pending','cash',?,?)",
+              args: [id, p1Id, departure, created, created],
+            });
+          const sortedIds = (rows) =>
+            rows.filter((b) => b.id.startsWith("sort-")).map((b) => b.id);
+          for (const query of [
+            "",
+            "?from=Sort%20pickup",
+            "?to=Sort%20destination",
+            "?date=2099-05-01",
+            "?from=Sort&to=destination&date=2099-05-01",
+          ])
+            assert.deepEqual(
+              sortedIds(
+                (await driver.request("/api/bookings" + query)).data.bookings,
+              ),
+              expected,
+            );
+          assert.deepEqual(
+            sortedIds((await p1.request("/api/bookings")).data.bookings),
+            expected,
+          );
+          for (const account of [p1, admin]) {
+            const history = (await account.request("/api/history")).data
+              .history;
+            assert.deepEqual(sortedIds(history), expected);
+            assert.deepEqual(
+              sortedIds(history.filter((b) => b.status === "pending")),
+              expected,
+            );
+            const csv = (await account.request("/api/reports/history")).data;
+            assert.deepEqual(
+              csv
+                .split("\n")
+                .filter((line) => line.startsWith("sort-"))
+                .map((line) => line.split(",")[0]),
+              expected,
+            );
+          }
+          for (const [id] of entries)
+            await db.execute({
+              sql: "UPDATE bookings SET driver_id=?,status='accepted',quoted_price=500 WHERE id=?",
+              args: [driverId, id],
+            });
+          assert.deepEqual(
+            sortedIds(
+              (await driver.request("/api/bookings?mine=1")).data.bookings,
+            ),
+            expected,
+          );
+          assert.deepEqual(
+            sortedIds((await driver.request("/api/history")).data.history),
+            expected,
+          );
+        } finally {
+          for (const [id] of entries)
+            await db.execute({
+              sql: "DELETE FROM bookings WHERE id=?",
+              args: [id],
+            });
+        }
+      },
+    );
+
+    await t.test(
+      "latest booking includes closed orders, stable ties and only the owning passenger",
+      async () => {
+        const ids = ["latest-old", "latest-a", "latest-z", "latest-other"];
+        try {
+          for (const [id, owner, status, created] of [
+            [ids[0], p1Id, "accepted", "2098-01-01T00:00:00Z"],
+            [ids[1], p1Id, "pending", "2098-01-02T00:00:00Z"],
+            [ids[2], p1Id, "cancelled", "2098-01-02T00:00:00Z"],
+            [ids[3], p2Id, "pending", "2099-01-01T00:00:00Z"],
+          ])
+            await db.execute({
+              sql: "INSERT INTO bookings (id,passenger_id,from_zone,to_zone,departure_at,status,payment_method,created_at,updated_at) VALUES (?,?,'Latest pickup','Latest dropoff',? ,?,'cash',?,?)",
+              args: [id, owner, future, status, created, created],
+            });
+          assert.deepEqual(
+            (await p1.request("/api/bookings?latest=1")).data.bookings.map(
+              (b) => b.id,
+            ),
+            ["latest-z"],
+          );
+          assert.deepEqual(
+            (await p2.request("/api/bookings?latest=1")).data.bookings.map(
+              (b) => b.id,
+            ),
+            ["latest-other"],
+          );
+          await db.execute(
+            "UPDATE bookings SET status='completed' WHERE id='latest-z'",
+          );
+          assert.equal(
+            (await p1.request("/api/bookings?latest=1")).data.bookings[0]
+              .status,
+            "completed",
+          );
+          assert.equal(
+            (await stranger.request("/api/bookings?latest=1")).status,
+            401,
+          );
+        } finally {
+          for (const id of ids)
+            await db.execute({
+              sql: "DELETE FROM bookings WHERE id=?",
+              args: [id],
+            });
+        }
+      },
+    );
+    await t.test(
+      "driver ratings require ownership and a finished ride, save once and preserve wallet income",
+      async () => {
+        const ids = [
+          "rating-arrived",
+          "rating-completed",
+          "rating-future",
+          "rating-cancelled",
+          "rating-pending",
+          "rating-no-arrival",
+        ];
+        const past = new Date(Date.now() - 3600000).toISOString();
+        const rating = (account, id, extra = {}) =>
+          account.request("/api/bookings/" + id + "/rating", "POST", {
+            score: 5,
+            feedback: "Smooth pickup",
+            confirm_finished: true,
+            ...extra,
+          });
+        try {
+          for (const [id, status, arrival, departure] of [
+            [ids[0], "accepted", past, past],
+            [ids[1], "completed", null, past],
+            [ids[2], "accepted", past, future],
+            [ids[3], "cancelled", past, past],
+            [ids[4], "pending", null, past],
+            [ids[5], "accepted", null, past],
+          ])
+            await db.execute({
+              sql: "INSERT INTO bookings (id,driver_id,passenger_id,from_zone,to_zone,departure_at,status,quoted_price,payment_method,arrived_at,created_at,updated_at) VALUES (?,?,?,'Rating pickup','Rating dropoff',?,?,700,'cash',?,?,?)",
+              args: [
+                id,
+                driverId,
+                p1Id,
+                departure,
+                status,
+                arrival,
+                past,
+                past,
+              ],
+            });
+          assert.equal((await rating(stranger, ids[0])).status, 401);
+          for (const account of [driver, driver2, admin])
+            assert.equal((await rating(account, ids[0])).status, 403);
+          assert.equal((await rating(p2, ids[0])).status, 404);
+          assert.equal((await rating(p1, "missing-booking")).status, 404);
+          assert.equal(
+            (
+              await p1.request(
+                "/api/bookings/" + ids[0] + "/rating",
+                "POST",
+                [],
+              )
+            ).status,
+            400,
+          );
+          assert.equal(
+            (
+              await p1.request(
+                "/api/bookings/" + ids[0] + "/rating",
+                "POST",
+                "invalid-body",
+              )
+            ).status,
+            400,
+          );
+          for (const score of [0, 6, 2.5, "5", true, null])
+            assert.equal((await rating(p1, ids[0], { score })).status, 400);
+          for (const feedback of ["x".repeat(501), true, {}])
+            assert.equal((await rating(p1, ids[0], { feedback })).status, 400);
+          for (const id of ids.slice(2))
+            assert.equal((await rating(p1, id)).status, 409);
+          assert.equal(
+            (await rating(p1, ids[0], { confirm_finished: false })).status,
+            409,
+          );
+          assert.equal(
+            (await rating(p1, ids[0], { confirm_finished: "true" })).status,
+            409,
+          );
+          const before = (await driver.request("/api/wallet")).data;
+          const results = await Promise.all([
+            rating(p1, ids[0]),
+            rating(p1, ids[0]),
+          ]);
+          assert.deepEqual(results.map((r) => r.status).sort(), [200, 409]);
+          assert.equal((await rating(p1, ids[0], { score: 1 })).status, 409);
+          const saved = (
+            await db.execute({
+              sql: "SELECT * FROM bookings WHERE id=?",
+              args: [ids[0]],
+            })
+          ).rows[0];
+          assert.equal(saved.status, "completed");
+          assert.equal(saved.rating_score, 5);
+          assert.equal(saved.rating_feedback, "Smooth pickup");
+          assert.equal(saved.arrived_at, past);
+          assert.ok(saved.rated_at);
+          assert.equal(
+            (
+              await rating(p1, ids[1], {
+                score: 3,
+                feedback: "  Helpful driver  ",
+                confirm_finished: false,
+              })
+            ).status,
+            200,
+          );
+          const summary = (await driver.request("/api/ratings")).data;
+          assert.equal(summary.count, 2);
+          assert.equal(summary.average, 4);
+          assert.equal(
+            summary.reviews.find((r) => r.id === ids[1]).rating_feedback,
+            "Helpful driver",
+          );
+          assert.equal((await driver2.request("/api/ratings")).data.count, 0);
+          assert.equal((await p1.request("/api/ratings")).status, 403);
+          assert.equal((await stranger.request("/api/ratings")).status, 401);
+          const history = (await p1.request("/api/history")).data.history.find(
+            (r) => r.id === ids[0],
+          );
+          assert.equal(history.driver_rating_count, 2);
+          assert.equal(history.driver_rating_average, 4);
+          const after = (await driver.request("/api/wallet")).data;
+          assert.deepEqual(after.periods, before.periods);
+          assert.equal(
+            after.recent.find((r) => r.id === ids[0]).recorded_at,
+            past,
+          );
+          assert.equal(
+            Number(
+              (
+                await db.execute({
+                  sql: "SELECT COUNT(*) AS n FROM audit_logs WHERE action='RATE_DRIVER' AND details LIKE ?",
+                  args: ["Booking rating-arrived:%"],
+                })
+              ).rows[0].n,
+            ),
+            1,
+          );
+        } finally {
+          for (const id of ids)
+            await db.execute({
+              sql: "DELETE FROM bookings WHERE id=?",
+              args: [id],
+            });
+        }
+      },
+    );
+    await t.test(
+      "party size is validated, visible to drivers and preserved through fare agreement and arrival",
+      async () => {
+        const details = {
+          from_zone: "Group pickup",
+          to_zone: "Group destination",
+          passenger_count: 4,
+        };
+        for (const count of [null, "3", 0, -1, 5, 1.5, true, {}, []])
+          assert.equal(
+            (await request(p1, { ...details, passenger_count: count })).status,
+            400,
+          );
+        assert.equal((await request(driver, details)).status, 403);
+        const created = await request(p1, details);
+        assert.equal(created.status, 200);
+        const id = created.data.bookingId;
+        assert.equal(
+          (await driver.request("/api/bookings")).data.bookings.find(
+            (b) => b.id === id,
+          ).passenger_count,
+          4,
+        );
+        assert.equal(
+          (await request(p1, { ...details, passenger_count: 2 })).status,
+          409,
+          "changing the group size does not create a duplicate active journey",
+        );
+        assert.equal(
+          (await patch(driver, id, "accept", { price: 20, passenger_count: 1 }))
+            .status,
+          200,
+        );
+        const offered = (await p1.request("/api/bookings")).data.bookings.find(
+          (b) => b.id === id,
+        );
+        assert.equal(offered.passenger_count, 4);
+        assert.equal(
+          offered.quoted_price,
+          2000,
+          "the fare is the group total, not multiplied by party size",
+        );
+        assert.equal(
+          (await patch(p1, id, "confirm", { passenger_count: 2 })).status,
+          200,
+        );
+        assert.equal(
+          (await driver.request("/api/bookings?mine=1")).data.bookings.find(
+            (b) => b.id === id,
+          ).passenger_count,
+          4,
+        );
+        assert.equal((await patch(driver, id, "arrive")).status, 200);
+        const history = (
+          await driver.request("/api/history")
+        ).data.history.find((b) => b.id === id);
+        assert.equal(history.passenger_count, 4);
+        const recorded = (await driver.request("/api/wallet")).data.recent.find(
+          (b) => b.id === id,
+        );
+        assert.equal(recorded.quoted_price, 2000);
+        const report = await driver.request("/api/reports/history");
+        const [header, ...rows] = report.data.split("\n");
+        const column = header.split(",").indexOf("passenger_count");
+        assert.ok(column >= 0);
+        assert.equal(
+          rows.find((line) => line.startsWith(id + ",")).split(",")[column],
+          "4",
+        );
+        assert.equal((await patch(p1, id, "cancel")).status, 200);
+        for (const count of [1, 2, 3]) {
+          const next = await request(p1, {
+            ...details,
+            passenger_count: count,
+          });
+          assert.equal(next.status, 200);
+          assert.equal(
+            (await p1.request("/api/bookings")).data.bookings.find(
+              (b) => b.id === next.data.bookingId,
+            ).passenger_count,
+            count,
+          );
+          assert.equal(
+            (await patch(p1, next.data.bookingId, "cancel")).status,
+            200,
+          );
+        }
+      },
+    );
+    await t.test(
+      "address lookup is private, validated, rate limited and preserves exact map points",
+      async () => {
+        const search = { action: "search", query: "KL Sentral" };
+        assert.equal(
+          (await stranger.request("/api/locations", "POST", search)).status,
+          401,
+        );
+        assert.equal(
+          (await driver.request("/api/locations", "POST", search)).status,
+          403,
+        );
+        assert.equal(
+          (await admin.request("/api/locations", "POST", search)).status,
+          403,
+        );
+        for (const invalid of [
+          null,
+          { action: "other" },
+          { ...search, query: "x" },
+          { ...search, query: "bad\naddress" },
+          { ...search, nearby: { lat: 3, lng: "bad" } },
+          { action: "reverse" },
+          { action: "reverse", lat: 90, lng: 101 },
+        ])
+          assert.equal(
+            (await p1.request("/api/locations", "POST", invalid)).status,
+            400,
+          );
+        const found = await p1.request("/api/locations", "POST", search);
+        assert.equal(found.status, 200);
+        assert.deepEqual(found.data.locations, [
+          {
+            address: "KL Sentral, Jalan Stesen Sentral, Kuala Lumpur, Malaysia",
+            lat: 3.1341,
+            lng: 101.6865,
+          },
+        ]);
+        assert.equal(
+          (await p1.request("/api/locations", "POST", search)).status,
+          429,
+        );
+        await delay(850);
+        const reverse = await p1.request("/api/locations", "POST", {
+          action: "reverse",
+          lat: 3.1391234,
+          lng: 101.6869876,
+        });
+        assert.equal(reverse.status, 200);
+        assert.equal(reverse.data.locations[0].lat, 3.139123);
+        assert.equal(reverse.data.locations[0].lng, 101.686988);
+        await delay(850);
+        const unavailable = await p1.request("/api/locations", "POST", {
+          action: "search",
+          query: "Unavailable",
+        });
+        assert.equal(unavailable.status, 503);
+        assert.match(unavailable.data.error, /temporarily unavailable/);
+      },
+    );
+    await t.test(
+      "passengers choose flexible place names and valid map pins; driver filters and history preserve them",
+      async () => {
+        const locations = {
+          from_zone: "  Library side entrance  ",
+          to_zone: "Apartment lobby, Jalan Melati",
+          pickup_lat: 3.1391234,
+          pickup_lng: 101.6869876,
+          destination_lat: 3.1574567,
+          destination_lng: 101.7112345,
+        };
+        for (const invalid of [
+          { pickup_lat: 91 },
+          { pickup_lng: -181 },
+          { pickup_lat: "3.14" },
+          { pickup_lng: null },
+          { destination_lng: "101.7" },
+          { destination_lat: null },
+          {
+            destination_lat: locations.pickup_lat,
+            destination_lng: locations.pickup_lng,
+          },
+          { from_zone: "bad\nlocation" },
+        ])
+          assert.equal(
+            (await request(p1, { ...locations, ...invalid })).status,
+            400,
+          );
+        assert.equal((await request(driver, locations)).status, 403);
+        const created = await request(p1, locations);
+        assert.equal(created.status, 200);
+        const id = created.data.bookingId;
+        const saved = (await p1.request("/api/bookings")).data.bookings.find(
+          (item) => item.id === id,
+        );
+        assert.equal(saved.from_zone, "Library side entrance");
+        assert.equal(saved.to_zone, locations.to_zone);
+        assert.equal(saved.pickup_lat, 3.139123);
+        assert.equal(saved.pickup_lng, 101.686988);
+        assert.equal(saved.destination_lat, 3.157457);
+        assert.equal(saved.destination_lng, 101.711235);
+        assert.equal(
+          (
+            await request(p1, {
+              ...locations,
+              from_zone: "library SIDE entrance",
+            })
+          ).status,
+          409,
+        );
+        assert.ok(
+          (
+            await driver.request("/api/bookings?from=SIDE%20ENTRANCE&to=melati")
+          ).data.bookings.some((item) => item.id === id),
+        );
+        assert.equal(
+          (await driver.request("/api/bookings?from=%25")).data.bookings.length,
+          0,
+        );
+        assert.ok(
+          !(await p2.request("/api/bookings")).data.bookings.some(
+            (item) => item.id === id,
+          ),
+        );
+        assert.equal(
+          (await patch(driver, id, "accept", { price: 12.5 })).status,
+          200,
+        );
+        assert.equal((await patch(p1, id, "confirm")).status, 200);
+        const assigned = (
+          await driver.request("/api/bookings?mine=1")
+        ).data.bookings.find((item) => item.id === id);
+        assert.equal(assigned.pickup_lat, saved.pickup_lat);
+        assert.equal(assigned.destination_lng, saved.destination_lng);
+        assert.equal(
+          (await patch(p2, id, "remark", { pickup_note: "Wrong location" }))
+            .status,
+          403,
+        );
+        const history = (await p1.request("/api/history")).data.history.find(
+          (item) => item.id === id,
+        );
+        assert.equal(history.pickup_lng, saved.pickup_lng);
+        assert.equal(history.destination_lat, saved.destination_lat);
+        assert.equal((await patch(p1, id, "cancel")).status, 200);
+        const sameName = await request(p1, {
+          ...locations,
+          from_zone: "Library",
+          to_zone: "Library",
+        });
+        assert.equal(sameName.status, 200);
+        assert.equal(
+          (await patch(p1, sameName.data.bookingId, "cancel")).status,
+          200,
         );
       },
     );
@@ -1023,6 +1698,15 @@ test(
             })
           ).status,
           200,
+        );
+        assert.equal(
+          (
+            await p1.request("/api/locations", "POST", {
+              action: "search",
+              query: "Library",
+            })
+          ).status,
+          403,
         );
         assert.equal(
           (await request(p1, { to_zone: "Faculty of Business" })).status,

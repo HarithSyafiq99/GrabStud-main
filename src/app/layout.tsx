@@ -1,11 +1,30 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "leaflet/dist/leaflet.css";
 import { AppLoadingProvider } from "@/components/AppLoadingProvider";
 
+const title = "GrabStudent · Good company. Better journeys.";
+const description =
+  "Book campus rides, review driver fares and travel with fellow students.";
+
 export const metadata: Metadata = {
-  title: "GrabStudent · Good company. Better journeys.",
+  metadataBase: new URL("https://grabstudent.vercel.app"),
+  title,
   icons: { icon: "/favicon.svg" },
-  description: "University carpool matching with petrol-sharing rates",
+  description,
+  openGraph: {
+    title,
+    description,
+    url: "/",
+    siteName: "GrabStudent",
+    type: "website",
+    locale: "en_MY",
+  },
+  twitter: {
+    card: "summary",
+    title,
+    description,
+  },
 };
 
 export const viewport: Viewport = {

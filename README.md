@@ -54,29 +54,36 @@ Driver demo accounts also need a profile photo and car details in My profile bef
 ## Features
 
 - Login with hashed passwords and an HttpOnly signed session cookie.
-- The passenger request form includes a current-bookings list with request, driver-offer and booked progress, fare/arrival updates and links to booking details. It refreshes after actions and every 20 seconds.
+- **Current Booking** sits at the top of the passenger dashboard and shows only the latest request, including completed or cancelled orders. Fare approval, cancellation, map pins and pickup remarks stay in that card. Earlier requests and offers are accessible in History; the separate Active Requests section is removed. Updates refresh after actions, every 10 seconds while visible, and when returning to the tab.
 - Passenger or driver registration with a required phone number and any valid email address; image/PDF document upload with validation.
 - Drivers add a mandatory profile photo and car colour, model/type and plate number. Passenger photos are optional. Photos are resized for quick loading; both roles can update their details in My profile.
 - New passengers and drivers get a short, three-step welcome guide, saved per account. Returning approved accounts skip the guide during upgrades.
 - Current users can add or edit their phone number; booking participants can view each other’s contact number.
 - New users start pending; admins review student IDs and driving licenses.
 - Declined students can upload updated documents for another review.
-- Pending approval refreshes every 15 seconds; request screens every 20 seconds.
-- Passengers create requests with pickup, destination, departure time and cash/QR payment. Only passengers can create booking requests.
-- Drivers filter passenger requests by pickup, destination and Malaysia departure date, then choose who to take.
+- Pending approval refreshes every 15 seconds; passenger requests refresh every 10 seconds and driver requests every 20 seconds.
+- Passengers fill blank pickup and destination address fields, without preset dropdowns. **Find on map** (or Enter) searches the address; choosing a match links it to the corresponding pin. Both pins are required when posting through the passenger dashboard. Only passengers can create booking requests.
+- Each request includes **1–4 passengers**, including the person booking. The dashboard offers clear passenger-count choices and shows the selected total in current bookings. Drivers see the count before offering a fare and on selected bookings; it remains visible in history and CSV exports. Existing bookings default to one passenger.
+- Passengers can tap the map, drag a pin or place it at the map centre. The matching address is looked up automatically and saved with that exact point. Editing an address clears its old pin. “Use my current location” requests permission on demand; declined permissions retain manual selection. If address lookup is unavailable or the place is unmapped, passengers can enter an address for the chosen pin and retry lookup. Saved pins remain attached to their booking.
+- Drivers search passenger requests using any part of the pickup or destination name and filter by Malaysia departure date, then choose who to take. Passenger and driver booking cards offer a single **View location map** button to see saved pickup and destination pins together. Map access remains in booking history.
 - Passenger booking by cash or QR **offline**. No payment processor is connected.
 - Drivers choose an available passenger request and propose a price. Each request can have only one selected driver at a time.
-- Drivers can tap the suggested fare or enter their own; the price editor shows when a valid fare is ready to send.
+- Drivers can tap the suggested fare for predefined campus routes or enter their own; custom routes ask drivers to enter a price after reviewing the locations. The price editor shows when a valid fare is ready to send.
+- The offered fare covers the whole booking group. It is recorded once in the wallet and is not multiplied by the passenger count.
 - Passengers review offers on their dashboard or booking history, then agree to book or decline.
+- After fare agreement, Current Booking shows **Complete** with all three booking steps checked. Pickup reminders follow only this latest booking. Submitting a new order clears the previous pickup banner and popup without deleting the historical pickup record.
+- Passenger requests, driver results (including route/date filters), selected bookings, history and history CSVs show the newest requests first by creation time. History status filters retain that order.
 - Only passenger agreement confirms the booking. Transactions prevent two drivers from claiming the same passenger request.
 - Confirmation checks the exact driver and fare reviewed by the passenger; stale offers cannot be accepted.
 - Passenger cancellation closes their request or confirmed booking before departure.
 - Declined or withdrawn offers reopen the request for another driver; the previous fare is cleared.
 - Duplicate active requests for the same passenger, route and departure time are blocked.
 - Passengers can add and edit pickup remarks such as an entrance or landmark; drivers see these beside each request.
-- Booked drivers can send an “I’ve arrived” reminder. Passengers see their driver's photo and car details, then reply “I’m on my way.” Updates refresh automatically every 20 seconds.
+- Booked drivers can send an “I’ve arrived” reminder. Passengers see their driver's photo and car details, then reply “I’m on my way.” Passenger updates refresh every 10 seconds while visible and on returning to the tab.
+- Passengers can leave one **1-5 star driver rating** with optional feedback (up to 500 characters) after a finished ride, from Current Booking or History. For an arrived, confirmed booking after departure, the passenger explicitly confirms that the ride has finished when submitting; completion and the rating save together. Previously completed rides can also be rated. Drivers see their average, rating count and ten latest reviews; passengers see the selected driver's average beside their car details. Ratings preserve arrival timestamps and do not add wallet income again.
 - Selected drivers can cancel bookings before departure. The Complete journey button has been removed and the action area focuses on pickup coordination.
-- Driver Wallet shows daily, weekly and monthly recorded fares with an animated cash/QR donut chart and recent journey fares. Totals include booked journeys after departure and completed journeys, exclude future/offered/cancelled requests, and follow Malaysia time with Monday-start weeks. Direct cash/QR payment is not verified by the app.
+- Driver arrival opens a passenger popup with the driver photo, car, plate, pickup and agreed fare. Passengers can reply “I’m on my way” or dismiss it; dismissed reminders stay in the dashboard banner and do not reopen on each refresh in the same browser tab. The first-visit guide and other dialogs take priority.
+- Driver Wallet shows daily, weekly and monthly recorded fares with an animated cash/QR donut chart and recent journey fares. Tapping “I’ve arrived” records the booking’s agreed fare once, using the arrival date for Malaysia-time totals and Monday-start weeks. Unarrived, offered and cancelled bookings are excluded. Historical completed bookings without an arrival retain their departure date. The wallet refreshes every 20 seconds while visible and when returning to the tab. Direct cash/QR payment is not verified by the app.
 - Ride history, status filter, CSV export and print view.
 - Admin overview, student search, private document previews and system audit logs.
 - Admins manage passengers, drivers and administrators through **All users → Edit user**. They can edit name, email, phone, student/account number, role, approval status, profile photo, driver car details and verification documents, and optionally set a new password. Existing passwords are never displayed. Login/access changes revoke old sessions; an admin editing their own account gets a renewed session. The last approved administrator cannot be demoted or deactivated. Stale edits and duplicate emails are rejected, and audit logs record changed field names without passwords or documents.
@@ -88,11 +95,13 @@ Driver demo accounts also need a profile photo and car details in My profile bef
 
 ## Rules
 
+Address lookup uses [Photon](https://github.com/komoot/photon) and OpenStreetMap data, through a passenger-authenticated server endpoint. Search runs when **Find on map** or Enter is pressed; map address lookup waits for pin movement to settle. Responses are cached and requests are throttled. Reverse lookup uses nearby streets/buildings and keeps the exact chosen coordinates. Set the optional server variable `GEOCODING_BASE_URL` to use another Photon-compatible instance. No map API key is required for the default setup; online service availability and mapped address coverage apply.
+
 - Drivers need both Student ID and license to be approved.
 - Uploads accept PNG, JPEG, WebP or PDF. Max 1.5MB each.
 - Route rates are suggestions. Drivers propose the actual fare in RM (positive, up to two decimal places). The passenger must agree before the booking is booked.
 - Each new request is for the passenger creating it. Driver-published rides and bookings against those rides are disabled for new orders.
-- Origin and destination must differ; departures must be in the future.
+- Location names must contain 2–160 characters. Coordinate pairs are validated and rounded to six decimal places. Pickup and destination must differ; places with the same name are allowed when their pins differ. Departures must be in the future.
 - Requests move from pending (available to drivers) to offered (one driver selected the passenger and proposed a price), then booked (the passenger agreed).
 - A selected request is hidden from other drivers. Declining the price or withdrawing the offer makes it available again.
 - The internal accepted status represents a booked seat; screens display it as Booked.
@@ -111,6 +120,8 @@ npm run build
 ```
 
 The integration suite starts its own server with an isolated temporary SQLite database, then removes it. It verifies document requirements, approval, role restrictions, fare validation, price offers, passenger agreement, competing driver selection and stale-offer protection, phone validation, legacy database migration, cancellation, repeat booking, ride completion, resubmission and reports. Integration tests use `.next-test` for generated files so a running development server keeps its own `.next` output. Set `GRABSTUDENT_DIST_DIR=.next-build` for an isolated production build.
+
+Address formatting, caching, malformed provider responses and exact reverse-pin retention are covered by `tests/geocoding.ts`. `node --expose-gc --import tsx tests/location-browser.mjs` runs the standalone headless Edge address workflow on Windows (set `EDGE_PATH` for a different browser executable). It uses temporary synthetic fixtures and intercepts map tiles and address lookups, including failure and delayed-response scenarios.
 
 ## Deploy on Vercel
 

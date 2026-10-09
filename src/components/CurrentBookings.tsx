@@ -1,7 +1,13 @@
+"use client";
 import type { BookingRecord } from "@/lib/types";
 import { rideDate, rideTime } from "@/lib/client";
 import { Icon } from "./Icon";
+import { PassengerCount } from "./PassengerCount";
 import { RouteLoading } from "./RouteLoading";
+import { BookingOffer } from "./BookingOffer";
+import { BookingLocations } from "./BookingLocations";
+import { DriverDetails, ArrivalNotice, PickupRemark } from "./PickupDetails";
+import { DriverRating } from "./DriverRating";
 import { Empty } from "./UI";
 
 const STEPS = ["Request sent", "Driver offer", "Booked"];
@@ -11,11 +17,13 @@ export function CurrentBookings({
   loading,
   disabled,
   onRefresh,
+  onCancel,
 }: {
   bookings: BookingRecord[];
   loading: boolean;
   disabled: boolean;
   onRefresh: () => void | Promise<void>;
+  onCancel: (id: string) => void;
 }) {
   return (
     <section
@@ -25,11 +33,13 @@ export function CurrentBookings({
       <div className="current-bookings-heading">
         <div>
           <h2 id="current-bookings-title" className="section-title">
-            Current bookings{" "}
-            <span className="current-bookings-count">{bookings.length}</span>
+            Current Booking{" "}
+            <span className="current-bookings-count">
+              {Math.min(bookings.length, 1)}
+            </span>
           </h2>
           <p className="section-subtitle">
-            Follow your request from posting to booking.
+            Your latest booking. Earlier journeys and offers are in History.
           </p>
         </div>
         <button
@@ -45,42 +55,63 @@ export function CurrentBookings({
         <RouteLoading label="Loading your current bookings…" />
       ) : bookings.length ? (
         <ul className="current-bookings-list">
-          {bookings.map((booking) => {
-            const step =
-              booking.status === "accepted"
-                ? 2
-                : booking.status === "offered"
-                  ? 1
-                  : 0;
+          {bookings.slice(0, 1).map((booking) => {
+            const step = ["accepted", "completed"].includes(booking.status)
+              ? 2
+              : booking.status === "offered"
+                ? 1
+                : 0;
             const expired =
-              booking.status !== "accepted" &&
+              ["pending", "offered"].includes(booking.status) &&
               new Date(booking.departure_at).getTime() <= Date.now();
             const unavailable =
               booking.ride_id !== null &&
               !["open", "full"].includes(booking.ride_status ?? "");
-            const inactive = expired || unavailable;
-            const title = inactive
-              ? "Request no longer available"
-              : step === 2
-                ? "Booked"
-                : step === 1
-                  ? "Review price"
-                  : "Waiting for driver";
-            const message = expired
-              ? "Your departure time has passed. Post a new request."
-              : unavailable
-                ? "This journey is no longer open. Check your booking details."
+            const closed = ["cancelled", "rejected"].includes(booking.status);
+            const inactive =
+              closed ||
+              (booking.status !== "completed" && (expired || unavailable));
+            const future =
+              new Date(booking.departure_at).getTime() > Date.now();
+            const active = ["pending", "offered", "accepted"].includes(
+              booking.status,
+            );
+            const complete = !inactive && step === 2;
+            const title = closed
+              ? booking.status === "cancelled"
+                ? "Cancelled"
+                : "Rejected"
+              : inactive
+                ? "Request no longer available"
                 : step === 2
-                  ? booking.arrived_at
-                    ? booking.arrival_acknowledged_at
-                      ? "Your driver knows you’re on your way."
-                      : "Your driver has arrived at your pickup location."
-                    : "Your booking is confirmed. Watch for your driver’s arrival reminder."
+                  ? "Complete"
                   : step === 1
-                    ? `${booking.driver_name || "A driver"} offered RM ${(Number(booking.quoted_price) / 100).toFixed(2)}. Review the price to confirm your booking.`
-                    : "Your request is visible to drivers. Waiting for a driver to choose your journey.";
+                    ? "Review price"
+                    : "Waiting for driver";
+            const message = closed
+              ? "This booking is closed. Post a new journey whenever you are ready."
+              : booking.status === "completed"
+                ? "Your ride is completed. Thank you for travelling with GrabStudent."
+                : expired
+                  ? "Your departure time has passed. Post a new request."
+                  : unavailable
+                    ? "This journey is no longer open. Check your booking details."
+                    : step === 2
+                      ? booking.arrived_at
+                        ? booking.arrival_acknowledged_at
+                          ? "Your driver knows you’re on your way."
+                          : "Your driver has arrived at your pickup location."
+                        : "Booking complete — your journey is confirmed. Watch for your driver’s arrival reminder."
+                      : step === 1
+                        ? `${booking.driver_name || "A driver"} offered RM ${(Number(booking.quoted_price) / 100).toFixed(2)}. Review the price to confirm your booking.`
+                        : "Your request is visible to drivers. Waiting for a driver to choose your journey.";
             return (
-              <li key={booking.id} className="current-booking-card">
+              <li
+                key={booking.id}
+                className="current-booking-card"
+                id={`booking-${booking.id}`}
+                data-complete={complete}
+              >
                 <h3>
                   {booking.from_zone} <Icon name="arrow" size={14} />{" "}
                   {booking.to_zone}
@@ -90,6 +121,7 @@ export function CurrentBookings({
                   {rideDate(booking.departure_at)} ·{" "}
                   {rideTime(booking.departure_at)}
                 </p>
+                <PassengerCount count={booking.passenger_count} />
                 <div
                   key={`${booking.status}-${booking.arrived_at}-${booking.arrival_acknowledged_at}-${inactive}`}
                   className="current-booking-update"
@@ -123,14 +155,16 @@ export function CurrentBookings({
                         data-state={
                           inactive
                             ? "inactive"
-                            : index < step
+                            : complete || index < step
                               ? "done"
                               : index === step
                                 ? "current"
                                 : "next"
                         }
                         aria-current={
-                          !inactive && index === step ? "step" : undefined
+                          !inactive && !complete && index === step
+                            ? "step"
+                            : undefined
                         }
                       >
                         <span>
@@ -145,15 +179,50 @@ export function CurrentBookings({
                     ))}
                   </ol>
                 </div>
-                <a
-                  className="current-booking-details"
-                  href={`#booking-${booking.id}`}
-                >
-                  {step === 1 && !inactive
-                    ? "Review driver’s offer"
-                    : "View booking details"}{" "}
-                  <Icon name="chevron" size={14} />
-                </a>
+                <div className="current-booking-content">
+                  <DriverDetails booking={booking} />
+                  {booking.quoted_price != null && step === 2 ? (
+                    <p className="text-sm mt-3">
+                      Agreed fare:{" "}
+                      <strong>
+                        RM {(Number(booking.quoted_price) / 100).toFixed(2)}
+                      </strong>{" "}
+                      · {booking.payment_method.toUpperCase()}
+                    </p>
+                  ) : null}
+                  <ArrivalNotice booking={booking} onUpdated={onRefresh} />
+                  <PickupRemark
+                    booking={booking}
+                    onUpdated={onRefresh}
+                    editable={active}
+                  />
+                  <BookingLocations booking={booking} />
+                  {booking.status === "offered" && future && !inactive ? (
+                    <BookingOffer
+                      id={booking.id}
+                      price={booking.quoted_price!}
+                      driverId={booking.driver_id}
+                      onUpdated={onRefresh}
+                      disabled={disabled}
+                    />
+                  ) : null}
+                  <DriverRating
+                    key={booking.id}
+                    booking={booking}
+                    onUpdated={onRefresh}
+                    disabled={disabled}
+                  />
+                  {active && future && !inactive ? (
+                    <button
+                      type="button"
+                      className="btn btn-secondary mt-3"
+                      disabled={disabled}
+                      onClick={() => onCancel(booking.id)}
+                    >
+                      Cancel request
+                    </button>
+                  ) : null}
+                </div>
               </li>
             );
           })}
@@ -166,7 +235,7 @@ export function CurrentBookings({
         />
       )}
       <p className="current-bookings-hint">
-        <Icon name="clock" size={12} /> Updates automatically every 20 seconds.
+        <Icon name="clock" size={12} /> Updates automatically every 10 seconds.
       </p>
     </section>
   );

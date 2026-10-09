@@ -6,6 +6,7 @@ import { Avatar } from "./Avatar";
 import { Icon } from "./Icon";
 import { Modal } from "./Modal";
 import { Notice } from "./UI";
+import { LoadingLink } from "./LoadingLink";
 
 type Props = { booking: BookingRecord; onUpdated: () => void | Promise<void> };
 export function PickupRemark({
@@ -108,6 +109,12 @@ export function DriverDetails({ booking }: { booking: BookingRecord }) {
       <Avatar name={booking.driver_name} photo={booking.driver_photo} />
       <div>
         <strong>{booking.driver_name}</strong>
+        <div className="driver-rating-average">
+          <Icon name="star" size={13} />
+          {booking.driver_rating_count
+            ? `${Number(booking.driver_rating_average).toFixed(1)}/5 · ${booking.driver_rating_count} ${booking.driver_rating_count === 1 ? "rating" : "ratings"}`
+            : "No ratings yet"}
+        </div>
         <p>
           {booking.car_colour && booking.car_type
             ? `${booking.car_colour} · ${booking.car_type}`
@@ -223,9 +230,14 @@ export function DriverArrival({ booking, onUpdated }: Props) {
       )}
       <p className="text-xs muted mt-2">
         {booking.arrived_at
-          ? "Your passenger can see your pickup update."
-          : "Send this when you reach the pickup point."}
+          ? "Your passenger can see your pickup update. The agreed fare is recorded in your wallet."
+          : "Send this when you reach the pickup point. The agreed fare will be added to your wallet."}
       </p>
+      {booking.arrived_at ? (
+        <LoadingLink href="/wallet" className="pickup-edit">
+          View my wallet <Icon name="arrow" size={13} />
+        </LoadingLink>
+      ) : null}
       <Notice message={error} error />
     </div>
   );

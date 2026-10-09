@@ -1177,6 +1177,10 @@ h3 {
   line-height: 1.6;
   font-weight: 650;
 }
+.current-booking-card[data-complete="true"] {
+  border-color: #cce8d6;
+  background: #fcfffd;
+}
 .current-booking-card h3 > svg {
   display: inline;
   vertical-align: middle;
@@ -1214,7 +1218,8 @@ h3 {
   background: #f0e8fa;
   color: var(--purple);
 }
-.current-booking-status[data-state="accepted"] {
+.current-booking-status[data-state="accepted"],
+.current-booking-status[data-state="completed"] {
   background: #eaf7ef;
   color: #28714a;
 }
@@ -1283,6 +1288,16 @@ h3 {
 .current-booking-steps li[data-state="current"]::before {
   background: #cdb7e8;
 }
+.current-booking-card[data-complete="true"] .current-booking-steps li {
+  color: #28714a;
+}
+.current-booking-card[data-complete="true"] .current-booking-steps li > span {
+  border-color: #bfe0cb;
+  background: #eaf7ef;
+}
+.current-booking-card[data-complete="true"] .current-booking-steps li::before {
+  background: #bfe0cb;
+}
 .current-booking-details {
   display: flex;
   align-items: center;
@@ -1321,11 +1336,7 @@ h3 {
   border-color: #c8b5e5;
   box-shadow: 0 0 0 3px #f0e8fa;
 }
-@media (min-width: 1200px) {
-  .passenger-request-grid {
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-  }
-}
+
 @media (max-width: 900px) {
   .current-bookings {
     padding: 20px;
@@ -3253,9 +3264,311 @@ textarea.input {
   color: #8a759e;
   overflow-wrap: anywhere;
 }
+.arrival-popup-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 8px 0 20px;
+}
+.arrival-popup-heading p {
+  font-size: 14px;
+  line-height: 1.7;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+}
+.arrival-popup-heading > div,
+.arrival-popup .driver-details > div {
+  min-width: 0;
+}
+.arrival-popup .icon-btn {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+.arrival-popup .driver-phone {
+  min-height: 44px;
+}
+.arrival-popup .driver-details {
+  padding: 16px;
+  border: 1px solid #e8def3;
+  border-radius: 16px;
+  background: #faf7fe;
+}
+.arrival-popup-route {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+  font-size: 13px;
+}
+.arrival-popup-route span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.arrival-popup-route strong {
+  color: var(--purple);
+}
+.arrival-popup-note {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.arrival-popup .action-group {
+  display: flex;
+  flex-wrap: wrap;
+}
+.arrival-popup .action-group .btn {
+  flex: 1 1 150px;
+  min-height: 44px;
+}
 .history-pickup {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.location-field {
+  min-width: 0;
+}
+.location-pin-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px;
+  margin-top: 10px;
+  border: 1px dashed #cdbbe7;
+  border-radius: 14px;
+  background: #faf7fe;
+  color: var(--purple);
+  text-align: left;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease;
+}
+.location-pin-button:hover {
+  background: #f2eafa;
+  border-color: var(--purple);
+}
+.location-pin-button.is-marked {
+  border-style: solid;
+  border-color: #c0ddcb;
+  background: #f2faf5;
+  color: #427956;
+}
+.location-pin-button > span {
+  flex: 1;
+  min-width: 0;
+}
+.location-pin-button strong {
+  display: block;
+  font-size: 12px;
+}
+.location-pin-button small {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.location-remove {
+  min-height: 44px;
+  font-size: 11px;
+  color: var(--muted);
+  text-decoration: underline;
+}
+.location-modal {
+  max-width: 680px;
+}
+.location-modal .btn,
+.location-modal .icon-btn {
+  min-height: 44px;
+}
+.location-modal .icon-btn {
+  min-width: 44px;
+  flex-shrink: 0;
+}
+.location-map-instructions {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.7;
+  margin-bottom: 14px;
+  overflow-wrap: anywhere;
+}
+.journey-map-shell {
+  position: relative;
+}
+.journey-map {
+  height: clamp(240px, 42dvh, 360px);
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  isolation: isolate;
+  z-index: 0;
+  font-family: inherit;
+  background: #eeeaf4;
+}
+.journey-map-loading {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 1000;
+  pointer-events: none;
+  background: #fffffff2;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  font-size: 12px;
+}
+.journey-map-loading .booking-progress-emblem {
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  flex-shrink: 0;
+}
+.journey-map-loading .booking-progress-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+}
+.journey-map-loading .booking-progress-logo svg {
+  width: 18px;
+  height: 18px;
+}
+.journey-map-loading .booking-progress-orbit {
+  inset: 0;
+}
+.journey-map .leaflet-control-attribution {
+  font-size: 10px;
+  max-width: 100%;
+}
+.journey-map .leaflet-control-zoom.leaflet-bar a {
+  width: 44px;
+  height: 44px;
+  line-height: 44px;
+}
+.journey-map-marker {
+  background: none;
+  border: 0;
+}
+.journey-map-pin {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  background: #7954bf;
+  border: 3px solid white;
+  border-radius: 50% 50% 50% 5px;
+  box-shadow: 0 3px 12px #35274b40;
+  color: white;
+  font-size: 14px;
+  font-weight: 750;
+}
+.journey-map-pin.destination {
+  background: #427956;
+}
+.location-map-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.location-map-tools .btn {
+  flex: 1 1 200px;
+  white-space: normal;
+  text-align: center;
+}
+.location-pin-status {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 14px;
+  overflow-wrap: anywhere;
+}
+.location-map-legend {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.location-map-legend p {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.location-map-legend p > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.location-map-legend small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+.location-map-legend strong {
+  display: block;
+  font-size: 13px;
+  margin-top: 3px;
+}
+.location-legend-dot {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  background: #eee6f8;
+  color: var(--purple);
+  font-size: 12px;
+  font-weight: 750;
+  flex-shrink: 0;
+}
+.location-legend-dot.destination {
+  color: #427956;
+  background: #e9f4ed;
+}
+.booking-locations {
+  margin-top: 18px;
+}
+.booking-location-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.booking-location-actions .btn {
+  min-height: 44px;
+  font-size: 11px;
+}
+.booking-person {
+  min-width: 0;
+}
+.booking-info > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.booking-item h3 {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .journey-map {
+    height: clamp(220px, 36dvh, 300px);
+  }
+  .location-modal .action-group {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .location-modal .action-group .btn {
+    flex: 1 1 180px;
+  }
+  .booking-location-actions .btn {
+    flex: 1 1 150px;
+  }
 }
 .wallet-periods {
   display: flex;
@@ -3560,5 +3873,355 @@ textarea.input {
   }
   body {
     background: white;
+  }
+}
+
+.location-address-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin: 8px 0 11px;
+}
+
+.passenger-count-field {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+}
+.passenger-count-field legend {
+  font-size: 12px;
+  font-weight: 700;
+  color: #827394;
+  margin-bottom: 5px;
+}
+.passenger-count-field > p {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.passenger-count-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0 9px;
+}
+.passenger-count-options label {
+  position: relative;
+  min-width: 0;
+  cursor: pointer;
+}
+.passenger-count-options label > span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 69px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fcfaff;
+  color: #9586a6;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease;
+}
+.passenger-count-options strong {
+  font-size: 21px;
+  font-variant-numeric: tabular-nums;
+}
+.passenger-count-options small {
+  font-size: 10px;
+}
+.passenger-count-options input:checked + span {
+  background: #eee6fa;
+  border-color: #9978d0;
+  color: #7954bf;
+}
+.passenger-count-options input:focus-visible + span {
+  outline: 3px solid #c9b7ed;
+  outline-offset: 2px;
+}
+.passenger-count-options input:disabled + span {
+  opacity: 0.65;
+  cursor: wait;
+}
+.passenger-count-field .passenger-count-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #7954bf;
+}
+.passenger-count-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 9px;
+  padding: 6px 9px;
+  margin: 8px 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: #7654a8;
+  background: #f0eafa;
+}
+@media (hover: hover) {
+  .passenger-count-options label:hover > span {
+    background: #f0eafa;
+    border-color: #b49bda;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .passenger-count-options label > span {
+    transition: none;
+  }
+}
+.location-address-tools small {
+  flex: 1 1 140px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.location-address-tools .btn {
+  min-height: 44px;
+  padding: 10px 13px;
+}
+.location-address-results {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+}
+.location-address-results p,
+.location-address-results small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.location-address-results button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #faf7ff;
+  color: #675080;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease;
+}
+.location-address-results button:hover {
+  background: #efe7fb;
+  border-color: #bfa8de;
+}
+.location-address-results button:focus-visible {
+  outline: 3px solid #c9b7ed;
+  outline-offset: 2px;
+}
+.location-address-results button span {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.location-address-results button svg {
+  flex-shrink: 0;
+}
+.location-address-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  font-size: 12px;
+  color: #7954bf;
+}
+.location-address-loading .booking-progress-emblem {
+  width: 40px;
+  height: 40px;
+  margin: 0;
+  flex-shrink: 0;
+}
+.location-address-loading .booking-progress-logo {
+  width: 29px;
+  height: 29px;
+  border-radius: 10px;
+}
+.location-address-loading .booking-progress-logo svg {
+  width: 20px;
+  height: 20px;
+}
+.location-selected-address {
+  padding: 14px;
+  margin-top: 12px;
+  background: #faf7ff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+.location-selected-address strong {
+  font-size: 12px;
+  color: #7954bf;
+}
+.location-selected-address p {
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 5px 0;
+}
+.location-selected-address small {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 7px;
+}
+.location-selected-address .field {
+  margin-top: 10px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .location-address-results button {
+    transition: none;
+  }
+}
+
+.current-bookings {
+  margin-bottom: 28px;
+}
+.current-booking-content {
+  border-top: 1px solid var(--line);
+  margin-top: 18px;
+  padding-top: 4px;
+}
+.rating-stars {
+  border: 0;
+  padding: 0;
+  margin: 24px 0 8px;
+  display: flex;
+  gap: 8px;
+}
+.rating-stars legend {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.rating-star {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: #f5f1fa;
+  color: #a99abb;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+.rating-star input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  margin: 0;
+}
+.rating-star[data-selected="true"] {
+  color: #a56b08;
+  background: #fff4d8;
+}
+.rating-star[data-selected="true"] svg {
+  fill: #f8c660;
+}
+.rating-star:hover {
+  transform: translateY(-2px);
+}
+.rating-star:focus-within {
+  outline: 2px solid var(--purple);
+  outline-offset: 3px;
+}
+.rating-label {
+  color: var(--purple);
+  font-size: 13px;
+  min-height: 22px;
+}
+.rating-finished {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 18px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.rating-finished input {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  accent-color: var(--purple);
+}
+.ride-rating-saved {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 12px;
+  background: #fff7e6;
+  color: #94630e;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.ride-rating-saved svg {
+  flex-shrink: 0;
+}
+.ride-rating-saved p {
+  margin-top: 4px;
+  white-space: pre-wrap;
+}
+.driver-rating-summary {
+  margin-bottom: 24px;
+}
+.driver-rating-summary summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--purple);
+  font-size: 14px;
+}
+.driver-rating-summary .rating-review {
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.driver-rating-summary .rating-review p {
+  margin-top: 6px;
+  white-space: pre-wrap;
+}
+.driver-rating-average {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  color: #94630e;
+  margin-top: 6px;
+  font-size: 12px;
+}
+@media (max-width: 360px) {
+  .rating-stars {
+    gap: 4px;
+  }
+  .rating-star {
+    width: 44px;
+    height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rating-star {
+    transition: none;
+  }
+  .rating-star:hover {
+    transform: none;
   }
 }

@@ -16,10 +16,7 @@ export async function GET() {
           (user.role === "driver" ? "b.driver_id" : "b.passenger_id") +
           "=?";
     const result = await getDb().execute({
-      sql:
-        BOOKING_SELECT +
-        where +
-        " ORDER BY b.departure_at DESC,b.created_at DESC",
+      sql: BOOKING_SELECT + where + " ORDER BY b.created_at DESC,b.id DESC",
       args: user.role === "admin" ? [] : [user.id],
     });
     return NextResponse.json({ history: result.rows, role: user.role });

@@ -1,6 +1,10 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { DriverRating } from "@/components/DriverRating";
 import { BookingOffer } from "@/components/BookingOffer";
+import { BookingLocations } from "@/components/BookingLocations";
+import { PassengerCount } from "@/components/PassengerCount";
+import type { BookingRecord } from "@/lib/types";
 import { BookingProgress } from "@/components/BookingProgress";
 import { RouteLoading } from "@/components/RouteLoading";
 import { DownloadButton } from "@/components/DownloadButton";
@@ -8,7 +12,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Icon } from "@/components/Icon";
 import { Notice, Stats, Empty } from "@/components/UI";
 import { api, rideDate, rideTime } from "@/lib/client";
-type Row = Record<string, string | number | null>;
+type Row = BookingRecord;
 export default function History() {
   const [rows, setRows] = useState<Row[]>([]),
     [role, setRole] = useState("passenger"),
@@ -88,7 +92,7 @@ export default function History() {
         items={[
           { label: "Total bookings", value: rows.length, icon: "history" },
           {
-            label: "Booked seats",
+            label: "Booked journeys",
             value: rows.filter((r) => r.status === "accepted").length,
             icon: "check",
           },
@@ -183,6 +187,17 @@ export default function History() {
                         Pickup: {r.pickup_note}
                       </small>
                     ) : null}
+                    <PassengerCount count={r.passenger_count} />
+                    <BookingLocations booking={r} />
+                    {role !== "passenger" && r.rated_at ? (
+                      <div className="ride-rating-saved">
+                        <Icon name="star" size={16} />
+                        <div>
+                          <strong>{r.rating_score}/5 stars</strong>
+                          <p>{r.rating_feedback || "No written feedback."}</p>
+                        </div>
+                      </div>
+                    ) : null}
                     {role === "admin" ? (
                       <small>
                         {r.passenger_phone} / {r.driver_phone}
@@ -212,6 +227,11 @@ export default function History() {
                       data-label="Manage booking"
                       className="print-hide mobile-card-actions"
                     >
+                      <DriverRating
+                        booking={r}
+                        onUpdated={load}
+                        disabled={!!busy}
+                      />
                       {r.status === "offered" &&
                       (r.ride_id == null ||
                         ["open", "full"].includes(String(r.ride_status))) &&

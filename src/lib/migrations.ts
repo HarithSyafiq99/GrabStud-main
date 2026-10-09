@@ -40,6 +40,9 @@ export async function initializeSchema(db: Client) {
     const hasPrice = columns.rows.some((r) => r.name === "quoted_price");
     const hasRoutes = columns.rows.some((r) => r.name === "from_zone");
     const hasDriver = columns.rows.some((r) => r.name === "driver_id");
+    const hasPassengerCount = columns.rows.some(
+      (r) => r.name === "passenger_count",
+    );
     const rideRequired = columns.rows.some(
       (r) => r.name === "ride_id" && Number(r.notnull) === 1,
     );
@@ -62,17 +65,37 @@ export async function initializeSchema(db: Client) {
       const price = hasPrice
         ? "b.quoted_price"
         : "CASE WHEN b.status IN ('accepted','completed') THEN r.flat_rate * 100 ELSE NULL END";
+      const preserved = [
+        "pickup_note",
+        "pickup_lat",
+        "pickup_lng",
+        "destination_lat",
+        "destination_lng",
+        "arrived_at",
+        "arrival_acknowledged_at",
+        "rating_score",
+        "rating_feedback",
+        "rated_at",
+      ].filter((column) => columns.rows.some((r) => r.name === column));
+      const extraColumns = preserved.map((column) => "," + column).join("");
+      const extraValues = preserved.map((column) => ",b." + column).join("");
       await tx.execute(
-        "INSERT INTO bookings_v2 (id,ride_id,driver_id,from_zone,to_zone,departure_at,passenger_id,status,quoted_price,payment_method,created_at,updated_at) " +
+        "INSERT INTO bookings_v2 (id,ride_id,driver_id,from_zone,to_zone,departure_at,passenger_id,passenger_count,status,quoted_price,payment_method,created_at,updated_at" +
+          extraColumns +
+          ") " +
           "SELECT b.id,b.ride_id," +
           (hasDriver ? "b.driver_id" : "r.driver_id") +
           "," +
           (hasRoutes
             ? "b.from_zone,b.to_zone,b.departure_at"
             : "r.from_zone,r.to_zone,r.departure_at") +
-          ",b.passenger_id,b.status," +
+          ",b.passenger_id," +
+          (hasPassengerCount ? "b.passenger_count" : "1") +
+          ",b.status," +
           price +
-          ",b.payment_method,b.created_at,b.updated_at FROM bookings b LEFT JOIN rides r ON r.id=b.ride_id",
+          ",b.payment_method,b.created_at,b.updated_at" +
+          extraValues +
+          " FROM bookings b LEFT JOIN rides r ON r.id=b.ride_id",
       );
       await tx.execute("DROP TABLE bookings");
       await tx.execute("ALTER TABLE bookings_v2 RENAME TO bookings");
@@ -86,9 +109,23 @@ export async function initializeSchema(db: Client) {
     );
     const upgraded = await tx.execute("PRAGMA table_info(bookings)");
     for (const [column, definition] of [
+      [
+        "passenger_count",
+        "INTEGER NOT NULL DEFAULT 1 CHECK (passenger_count BETWEEN 1 AND 4 AND passenger_count=CAST(passenger_count AS INTEGER))",
+      ],
       ["pickup_note", "TEXT NOT NULL DEFAULT ''"],
+      ["pickup_lat", "REAL"],
+      ["pickup_lng", "REAL"],
+      ["destination_lat", "REAL"],
+      ["destination_lng", "REAL"],
       ["arrived_at", "TEXT"],
       ["arrival_acknowledged_at", "TEXT"],
+      [
+        "rating_score",
+        "INTEGER CHECK (rating_score BETWEEN 1 AND 5 AND rating_score=CAST(rating_score AS INTEGER))",
+      ],
+      ["rating_feedback", "TEXT CHECK (length(rating_feedback)<=500)"],
+      ["rated_at", "TEXT"],
     ]) {
       if (!upgraded.rows.some((r) => r.name === column))
         await tx.execute(
