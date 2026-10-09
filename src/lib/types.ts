@@ -76,11 +76,6 @@ export type BookingRecord = {
   destination_lng: number | null;
   arrived_at: string | null;
   arrival_acknowledged_at: string | null;
-  rating_score?: number | null;
-  rating_feedback?: string | null;
-  rated_at?: string | null;
-  driver_rating_average?: number | null;
-  driver_rating_count?: number;
   passenger_photo?: string | null;
   driver_photo?: string | null;
   car_colour?: string;

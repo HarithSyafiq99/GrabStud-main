@@ -52,9 +52,6 @@ CREATE TABLE IF NOT EXISTS bookings (
   destination_lng REAL,
   arrived_at TEXT,
   arrival_acknowledged_at TEXT,
-  rating_score INTEGER CHECK (rating_score BETWEEN 1 AND 5 AND rating_score=CAST(rating_score AS INTEGER)),
-  rating_feedback TEXT CHECK (length(rating_feedback)<=500),
-  rated_at TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE (ride_id, passenger_id)

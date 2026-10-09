@@ -1293,152 +1293,65 @@ test(
       },
     );
     await t.test(
-      "driver ratings require ownership and a finished ride, save once and preserve wallet income",
+      "retired rating APIs cannot alter bookings or wallet totals",
       async () => {
-        const ids = [
-          "rating-arrived",
-          "rating-completed",
-          "rating-future",
-          "rating-cancelled",
-          "rating-pending",
-          "rating-no-arrival",
-        ];
-        const past = new Date(Date.now() - 3600000).toISOString();
-        const rating = (account, id, extra = {}) =>
-          account.request("/api/bookings/" + id + "/rating", "POST", {
-            score: 5,
-            feedback: "Smooth pickup",
-            confirm_finished: true,
-            ...extra,
-          });
-        try {
-          for (const [id, status, arrival, departure] of [
-            [ids[0], "accepted", past, past],
-            [ids[1], "completed", null, past],
-            [ids[2], "accepted", past, future],
-            [ids[3], "cancelled", past, past],
-            [ids[4], "pending", null, past],
-            [ids[5], "accepted", null, past],
-          ])
-            await db.execute({
-              sql: "INSERT INTO bookings (id,driver_id,passenger_id,from_zone,to_zone,departure_at,status,quoted_price,payment_method,arrived_at,created_at,updated_at) VALUES (?,?,?,'Rating pickup','Rating dropoff',?,?,700,'cash',?,?,?)",
-              args: [
-                id,
-                driverId,
-                p1Id,
-                departure,
-                status,
-                arrival,
-                past,
-                past,
-              ],
-            });
-          assert.equal((await rating(stranger, ids[0])).status, 401);
-          for (const account of [driver, driver2, admin])
-            assert.equal((await rating(account, ids[0])).status, 403);
-          assert.equal((await rating(p2, ids[0])).status, 404);
-          assert.equal((await rating(p1, "missing-booking")).status, 404);
-          assert.equal(
-            (
-              await p1.request(
-                "/api/bookings/" + ids[0] + "/rating",
-                "POST",
-                [],
-              )
-            ).status,
-            400,
-          );
-          assert.equal(
-            (
-              await p1.request(
-                "/api/bookings/" + ids[0] + "/rating",
-                "POST",
-                "invalid-body",
-              )
-            ).status,
-            400,
-          );
-          for (const score of [0, 6, 2.5, "5", true, null])
-            assert.equal((await rating(p1, ids[0], { score })).status, 400);
-          for (const feedback of ["x".repeat(501), true, {}])
-            assert.equal((await rating(p1, ids[0], { feedback })).status, 400);
-          for (const id of ids.slice(2))
-            assert.equal((await rating(p1, id)).status, 409);
-          assert.equal(
-            (await rating(p1, ids[0], { confirm_finished: false })).status,
-            409,
-          );
-          assert.equal(
-            (await rating(p1, ids[0], { confirm_finished: "true" })).status,
-            409,
-          );
-          const before = (await driver.request("/api/wallet")).data;
-          const results = await Promise.all([
-            rating(p1, ids[0]),
-            rating(p1, ids[0]),
-          ]);
-          assert.deepEqual(results.map((r) => r.status).sort(), [200, 409]);
-          assert.equal((await rating(p1, ids[0], { score: 1 })).status, 409);
-          const saved = (
+        const created = await request(p1, {
+          from_zone: "No ratings pickup",
+          to_zone: "No ratings destination",
+        });
+        assert.equal(created.status, 200);
+        const id = created.data.bookingId;
+        assert.equal(
+          (await patch(driver, id, "accept", { price: 7 })).status,
+          200,
+        );
+        assert.equal((await patch(p1, id, "confirm")).status, 200);
+        assert.equal((await patch(driver, id, "arrive")).status, 200);
+        const before = (
+          await db.execute({
+            sql: "SELECT * FROM bookings WHERE id=?",
+            args: [id],
+          })
+        ).rows[0];
+        const wallet = (await driver.request("/api/wallet")).data.periods;
+        assert.equal((await driver.request("/api/ratings")).status, 404);
+        assert.equal(
+          (
+            await p1.request("/api/bookings/" + id + "/rating", "POST", {
+              score: 5,
+              feedback: "Removed",
+              confirm_finished: true,
+            })
+          ).status,
+          404,
+        );
+        assert.deepEqual(
+          (
             await db.execute({
               sql: "SELECT * FROM bookings WHERE id=?",
-              args: [ids[0]],
-            })
-          ).rows[0];
-          assert.equal(saved.status, "completed");
-          assert.equal(saved.rating_score, 5);
-          assert.equal(saved.rating_feedback, "Smooth pickup");
-          assert.equal(saved.arrived_at, past);
-          assert.ok(saved.rated_at);
-          assert.equal(
-            (
-              await rating(p1, ids[1], {
-                score: 3,
-                feedback: "  Helpful driver  ",
-                confirm_finished: false,
-              })
-            ).status,
-            200,
-          );
-          const summary = (await driver.request("/api/ratings")).data;
-          assert.equal(summary.count, 2);
-          assert.equal(summary.average, 4);
-          assert.equal(
-            summary.reviews.find((r) => r.id === ids[1]).rating_feedback,
-            "Helpful driver",
-          );
-          assert.equal((await driver2.request("/api/ratings")).data.count, 0);
-          assert.equal((await p1.request("/api/ratings")).status, 403);
-          assert.equal((await stranger.request("/api/ratings")).status, 401);
-          const history = (await p1.request("/api/history")).data.history.find(
-            (r) => r.id === ids[0],
-          );
-          assert.equal(history.driver_rating_count, 2);
-          assert.equal(history.driver_rating_average, 4);
-          const after = (await driver.request("/api/wallet")).data;
-          assert.deepEqual(after.periods, before.periods);
-          assert.equal(
-            after.recent.find((r) => r.id === ids[0]).recorded_at,
-            past,
-          );
-          assert.equal(
-            Number(
-              (
-                await db.execute({
-                  sql: "SELECT COUNT(*) AS n FROM audit_logs WHERE action='RATE_DRIVER' AND details LIKE ?",
-                  args: ["Booking rating-arrived:%"],
-                })
-              ).rows[0].n,
-            ),
-            1,
-          );
-        } finally {
-          for (const id of ids)
-            await db.execute({
-              sql: "DELETE FROM bookings WHERE id=?",
               args: [id],
-            });
+            })
+          ).rows[0],
+          before,
+        );
+        assert.deepEqual(
+          (await driver.request("/api/wallet")).data.periods,
+          wallet,
+        );
+        for (const account of [p1, driver, admin]) {
+          const row = (await account.request("/api/history")).data.history.find(
+            (row) => row.id === id,
+          );
+          for (const key of [
+            "rating_score",
+            "rating_feedback",
+            "rated_at",
+            "driver_rating_average",
+            "driver_rating_count",
+          ])
+            assert.equal(key in row, false);
         }
+        assert.equal((await patch(p1, id, "cancel")).status, 200);
       },
     );
     await t.test(

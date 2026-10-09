@@ -27,7 +27,7 @@ const STEPS = {
     {
       icon: "bell",
       title: "Meet your driver",
-      text: "Your driver sends a reminder when they arrive. Tap I’m on my way, check the car’s plate number, and pay directly in cash or QR. After the ride finishes, tap Rate your driver to share stars and feedback.",
+      text: "Your driver sends a reminder when they arrive. Tap I’m on my way, check the car’s plate number, and pay directly in cash or QR.",
     },
   ],
   driver: [
@@ -44,7 +44,7 @@ const STEPS = {
     {
       icon: "pin",
       title: "Send a pickup reminder",
-      text: "Tap I’ve arrived when you reach the pickup point. The passenger gets a popup and can reply I’m on my way. The agreed fare is added once to your Wallet’s daily, weekly and monthly totals. Passenger ratings appear on your dashboard after completed rides.",
+      text: "Tap I’ve arrived when you reach the pickup point. The passenger gets a popup and can reply I’m on my way. The agreed fare is added once to your Wallet’s daily, weekly and monthly totals.",
     },
   ],
 };

@@ -62,6 +62,18 @@ export async function initializeSchema(db: Client) {
           "CREATE TABLE bookings_v2",
         ),
       );
+      // Keep historical columns when rebuilding databases from the retired rating feature.
+      // New databases do not add these fields, and booking APIs do not expose them.
+      for (const [column, definition] of [
+        ["rating_score", "INTEGER"],
+        ["rating_feedback", "TEXT"],
+        ["rated_at", "TEXT"],
+      ]) {
+        if (columns.rows.some((r) => r.name === column))
+          await tx.execute(
+            `ALTER TABLE bookings_v2 ADD COLUMN ${column} ${definition}`,
+          );
+      }
       const price = hasPrice
         ? "b.quoted_price"
         : "CASE WHEN b.status IN ('accepted','completed') THEN r.flat_rate * 100 ELSE NULL END";
@@ -120,12 +132,6 @@ export async function initializeSchema(db: Client) {
       ["destination_lng", "REAL"],
       ["arrived_at", "TEXT"],
       ["arrival_acknowledged_at", "TEXT"],
-      [
-        "rating_score",
-        "INTEGER CHECK (rating_score BETWEEN 1 AND 5 AND rating_score=CAST(rating_score AS INTEGER))",
-      ],
-      ["rating_feedback", "TEXT CHECK (length(rating_feedback)<=500)"],
-      ["rated_at", "TEXT"],
     ]) {
       if (!upgraded.rows.some((r) => r.name === column))
         await tx.execute(

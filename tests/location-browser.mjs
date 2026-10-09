@@ -11,7 +11,8 @@ import { SignJWT } from "jose/jwt/sign";
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 const dir = await mkdtemp(join(tmpdir(), "grabstudent-address-browser-"));
 const db = createClient({ url: `file:${join(dir, "browser.db")}` });
-let server,
+let browserBuildDir,
+  server,
   edge,
   socket,
   serverOutput = "",
@@ -25,6 +26,8 @@ const check = (condition, name) => {
   console.log("PASS", name);
 };
 const secret = "browser-address-test-only-32-character-secret";
+const originalTsconfig = await readFile("tsconfig.json");
+const originalNextEnv = await readFile("next-env.d.ts");
 try {
   const schema = await readFile("src/lib/schema.sql", "utf8");
   for (const sql of schema
@@ -52,6 +55,7 @@ try {
     });
   });
   const base = `http://localhost:${port}`;
+  browserBuildDir = resolve(".next-test", `browser-${port}`);
   server = spawn(
     process.execPath,
     [
@@ -70,7 +74,7 @@ try {
         TURSO_DATABASE_URL: `file:${join(dir, "browser.db")}`,
         AUTH_SECRET: secret,
         NEXT_PUBLIC_DEMO_MODE: "false",
-        GRABSTUDENT_DIST_DIR: ".next-test",
+        GRABSTUDENT_DIST_DIR: `.next-test/browser-${port}`,
       },
     },
   );
@@ -947,113 +951,22 @@ try {
     ),
     "cancelled latest request remains displayed without resurfacing older pickup details",
   );
-  await db.execute({
-    sql: "UPDATE bookings SET departure_at=? WHERE id=?",
-    args: [new Date(Date.now() - 3600000).toISOString(), savedBooking.id],
-  });
+  check(
+    await evaluate(
+      "!document.querySelector('[data-action=rate-driver],.driver-rating-average,.ride-rating-saved') && !document.body.textContent.includes('Rate your driver')",
+    ),
+    "passenger dashboard has no rating controls or averages",
+  );
   await send("Page.navigate", { url: base + "/history" });
   await until(
-    "document.querySelector('[data-action=rate-driver]') && !document.querySelector('.booking-progress')",
-    "older booking can be rated from History",
-  );
-  await click("[data-action=rate-driver]");
-  await until("document.querySelector('.rating-modal')", "rating modal");
-  check(
-    await evaluate(
-      "document.querySelector('.rating-modal .btn-primary').disabled",
-    ),
-    "rating requires a score and ride-finished confirmation",
-  );
-  await click(".rating-stars label:nth-of-type(4)");
-  await evaluate(
-    "document.querySelector('.rating-stars input:checked').focus()",
-  );
-  await send("Input.dispatchKeyEvent", {
-    type: "keyDown",
-    key: "ArrowLeft",
-    code: "ArrowLeft",
-    windowsVirtualKeyCode: 37,
-  });
-  await send("Input.dispatchKeyEvent", {
-    type: "keyUp",
-    key: "ArrowLeft",
-    code: "ArrowLeft",
-    windowsVirtualKeyCode: 37,
-  });
-  check(
-    await evaluate(
-      "document.querySelector('.rating-stars input:checked').value==='3'",
-    ),
-    "star ratings support keyboard navigation",
-  );
-  await click(".rating-stars label:nth-of-type(4)");
-  await evaluate(
-    "(() => {const e=document.querySelector('.rating-modal textarea');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,'Friendly driver and easy pickup.');e.dispatchEvent(new Event('input',{bubbles:true}));})()",
-  );
-  await click(".rating-finished input");
-  await evaluate(
-    'Promise.all(document.querySelector(".rating-modal").getAnimations().map(animation=>animation.finished))',
-  );
-  for (const width of [320, 390, 844, 1280]) {
-    await send("Emulation.setDeviceMetricsOverride", {
-      width,
-      height: 844,
-      deviceScaleFactor: 1,
-      mobile: width < 768,
-    });
-    await delay(200);
-    check(
-      await evaluate(
-        "document.documentElement.scrollWidth<=innerWidth+1 && [...document.querySelectorAll('.rating-star')].every(e=>{const r=e.getBoundingClientRect();return r.width>=44 && r.height>=44 && r.left>=0 && r.right<=innerWidth})",
-      ),
-      "rating modal fits " +
-        width +
-        "px and provides accessible star touch targets",
-    );
-  }
-  await send("Emulation.setDeviceMetricsOverride", {
-    width: 390,
-    height: 844,
-    deviceScaleFactor: 1,
-    mobile: true,
-  });
-  await delay(200);
-  const ratingPreview = await send("Page.captureScreenshot", {
-    format: "png",
-    captureBeyondViewport: false,
-  });
-  await writeFile(
-    "docs/screenshots/mobile-driver-rating.png",
-    Buffer.from(ratingPreview.data, "base64"),
-  );
-  await click(".rating-modal .btn-primary");
-  await until(
-    "!document.querySelector('.rating-modal') && document.querySelector('.ride-rating-saved') && !document.querySelector('.booking-progress')",
-    "rating submitted",
-  );
-  const rated = (
-    await db.execute({
-      sql: "SELECT status,rating_score,rating_feedback,arrived_at FROM bookings WHERE id=?",
-      args: [savedBooking.id],
-    })
-  ).rows[0];
-  check(
-    rated.status === "completed" &&
-      rated.rating_score === 4 &&
-      rated.rating_feedback === "Friendly driver and easy pickup." &&
-      rated.arrived_at === arrivedRow.arrived_at,
-    "rating saves feedback, completes the finished ride and retains its arrival",
-  );
-  await send("Page.reload");
-  await until(
-    "document.querySelector('.ride-rating-saved') && !document.querySelector('.booking-progress')",
-    "rating after refresh",
+    "document.querySelector('tbody tr') && !document.querySelector('.booking-progress')",
+    "history after rating removal",
   );
   check(
     await evaluate(
-      "!document.querySelector('[data-action=rate-driver]') && document.querySelector('.ride-rating-saved').textContent.includes('4/5')",
+      "!document.querySelector('[data-action=rate-driver],.ride-rating-saved') && !document.body.textContent.includes('Rate your driver')",
     ),
-    "saved rating survives refresh and cannot be resubmitted",
+    "booking history has no rating or feedback controls",
   );
   await send("Network.setCookie", {
     name: "gs_session",
@@ -1064,15 +977,14 @@ try {
   });
   await send("Page.navigate", { url: base + "/driver" });
   await until(
-    "document.querySelector('.driver-rating-summary')?.textContent.includes('4.0/5') && !document.querySelector('.booking-progress')",
-    "driver rating summary",
+    "document.querySelector('.booking-actions') && !document.querySelector('.booking-progress')",
+    "driver dashboard after rating removal",
   );
-  await click(".driver-rating-summary summary");
   check(
     await evaluate(
-      "document.querySelector('.rating-review').textContent.includes('Friendly driver and easy pickup.')",
+      "!document.querySelector('.driver-rating-summary,.driver-rating-average,.rating-review') && !document.body.textContent.includes('No ratings yet')",
     ),
-    "driver sees average stars and passenger feedback on the dashboard",
+    "driver dashboard has no rating summary or feedback",
   );
   check(errors.length === 0, "no browser runtime exceptions");
   console.log(`${checks.length} address browser checks passed`);
@@ -1094,6 +1006,38 @@ try {
         child.once("error", r);
       });
     else processToStop.kill("SIGTERM");
+  }
+  if (browserBuildDir) {
+    assert.equal(
+      browserBuildDir.startsWith(resolve(".next-test") + "/") ||
+        browserBuildDir.startsWith(resolve(".next-test") + "\\"),
+      true,
+    );
+    await rm(browserBuildDir, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 200,
+    });
+  }
+  // Remove only configuration additions generated for this test's output directory.
+  if (browserBuildDir) {
+    const relativeBuildDir = browserBuildDir
+      .slice(resolve(".").length + 1)
+      .replaceAll("\\", "/");
+    const currentTsconfig = JSON.parse(await readFile("tsconfig.json", "utf8"));
+    currentTsconfig.include = currentTsconfig.include.filter(
+      (path) =>
+        path.replace(/^\.\//, "") !== relativeBuildDir + "/types/**/*.ts",
+    );
+    if (
+      JSON.stringify(currentTsconfig) ===
+      JSON.stringify(JSON.parse(originalTsconfig.toString()))
+    )
+      await writeFile("tsconfig.json", originalTsconfig);
+    const currentNextEnv = await readFile("next-env.d.ts", "utf8");
+    if (currentNextEnv.includes(relativeBuildDir + "/types/routes.d.ts"))
+      await writeFile("next-env.d.ts", originalNextEnv);
   }
   db.close();
   global.gc?.();

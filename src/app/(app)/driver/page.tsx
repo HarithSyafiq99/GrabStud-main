@@ -36,30 +36,18 @@ export default function Driver() {
     [message, setMessage] = useState(""),
     [error, setError] = useState(false),
     [cancel, setCancel] = useState<string | null>(null);
-  const [ratings, setRatings] = useState<{
-    average: number | null;
-    count: number;
-    reviews: {
-      id: string;
-      rating_score: number;
-      rating_feedback: string;
-      rated_at: string;
-    }[];
-  }>({ average: null, count: 0, reviews: [] });
   const load = useCallback(
     async (background = false) => {
       const feedback = background ? "background" : "blocking";
       try {
-        const [requests, assigned, reviews] = await Promise.all([
+        const [requests, assigned] = await Promise.all([
           api<{ bookings: BookingRecord[] }>("/api/bookings?" + filters, {
             feedback,
           }),
           api<{ bookings: BookingRecord[] }>("/api/bookings?mine=1", {
             feedback,
           }),
-          api<typeof ratings>("/api/ratings", { feedback }),
         ]);
-        setRatings(reviews);
         setAvailable(requests.bookings);
         setMine(assigned.bookings.filter((b) => b.status !== "pending"));
       } catch (e) {
@@ -194,37 +182,6 @@ export default function Driver() {
           Verified driver
         </span>
       </div>
-      <section
-        className="panel driver-rating-summary"
-        aria-label="Your driver ratings"
-      >
-        <details>
-          <summary>
-            <Icon name="star" size={20} />
-            <strong>
-              {ratings.count
-                ? Number(ratings.average).toFixed(1) + "/5"
-                : "No ratings yet"}
-            </strong>
-            <span>
-              · {ratings.count} {ratings.count === 1 ? "rating" : "ratings"}
-            </span>
-          </summary>
-          {ratings.reviews.length ? (
-            ratings.reviews.map((review) => (
-              <div key={review.id} className="rating-review">
-                <strong>{review.rating_score}/5 stars</strong>
-                <small className="muted"> · {rideDate(review.rated_at)}</small>
-                <p>{review.rating_feedback || "No written feedback."}</p>
-              </div>
-            ))
-          ) : (
-            <p className="text-xs muted mt-2">
-              Passenger feedback will appear here after completed journeys.
-            </p>
-          )}
-        </details>
-      </section>
       <Stats
         items={[
           {

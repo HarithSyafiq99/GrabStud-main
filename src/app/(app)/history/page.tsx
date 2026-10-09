@@ -1,6 +1,5 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { DriverRating } from "@/components/DriverRating";
 import { BookingOffer } from "@/components/BookingOffer";
 import { BookingLocations } from "@/components/BookingLocations";
 import { PassengerCount } from "@/components/PassengerCount";
@@ -189,15 +188,6 @@ export default function History() {
                     ) : null}
                     <PassengerCount count={r.passenger_count} />
                     <BookingLocations booking={r} />
-                    {role !== "passenger" && r.rated_at ? (
-                      <div className="ride-rating-saved">
-                        <Icon name="star" size={16} />
-                        <div>
-                          <strong>{r.rating_score}/5 stars</strong>
-                          <p>{r.rating_feedback || "No written feedback."}</p>
-                        </div>
-                      </div>
-                    ) : null}
                     {role === "admin" ? (
                       <small>
                         {r.passenger_phone} / {r.driver_phone}
@@ -227,11 +217,6 @@ export default function History() {
                       data-label="Manage booking"
                       className="print-hide mobile-card-actions"
                     >
-                      <DriverRating
-                        booking={r}
-                        onUpdated={load}
-                        disabled={!!busy}
-                      />
                       {r.status === "offered" &&
                       (r.ride_id == null ||
                         ["open", "full"].includes(String(r.ride_status))) &&

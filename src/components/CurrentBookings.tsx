@@ -7,7 +7,6 @@ import { RouteLoading } from "./RouteLoading";
 import { BookingOffer } from "./BookingOffer";
 import { BookingLocations } from "./BookingLocations";
 import { DriverDetails, ArrivalNotice, PickupRemark } from "./PickupDetails";
-import { DriverRating } from "./DriverRating";
 import { Empty } from "./UI";
 
 const STEPS = ["Request sent", "Driver offer", "Booked"];
@@ -206,12 +205,6 @@ export function CurrentBookings({
                       disabled={disabled}
                     />
                   ) : null}
-                  <DriverRating
-                    key={booking.id}
-                    booking={booking}
-                    onUpdated={onRefresh}
-                    disabled={disabled}
-                  />
                   {active && future && !inactive ? (
                     <button
                       type="button"

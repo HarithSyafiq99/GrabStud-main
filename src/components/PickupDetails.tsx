@@ -109,12 +109,6 @@ export function DriverDetails({ booking }: { booking: BookingRecord }) {
       <Avatar name={booking.driver_name} photo={booking.driver_photo} />
       <div>
         <strong>{booking.driver_name}</strong>
-        <div className="driver-rating-average">
-          <Icon name="star" size={13} />
-          {booking.driver_rating_count
-            ? `${Number(booking.driver_rating_average).toFixed(1)}/5 · ${booking.driver_rating_count} ${booking.driver_rating_count === 1 ? "rating" : "ratings"}`
-            : "No ratings yet"}
-        </div>
         <p>
           {booking.car_colour && booking.car_type
             ? `${booking.car_colour} · ${booking.car_type}`

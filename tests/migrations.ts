@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { createClient } from "@libsql/client";
 import { SCHEMA_SQL } from "../src/lib/schema";
 import { initializeSchema } from "../src/lib/migrations";
+import { BOOKING_SELECT } from "../src/lib/bookings";
 const previousSchema = SCHEMA_SQL.replace(
   /^  (session_version|profile_photo|car_colour|car_type|car_plate|onboarding_seen_at|passenger_count|pickup_note|pickup_lat|pickup_lng|destination_lat|destination_lng|arrived_at|arrival_acknowledged_at|rating_score|rating_feedback|rated_at).*\n/gm,
   "",
@@ -401,70 +402,78 @@ test("price-offer database upgrades keep offered fares and allow requests withou
   }
 });
 
-test("ratings upgrade preserves bookings and existing reviews on repeated initialization", async () => {
-  const dir = await mkdtemp(join(tmpdir(), "grabstudent-migration-"));
-  const db = createClient({ url: "file:" + join(dir, "ratings.db") });
-  try {
-    const previous = SCHEMA_SQL.replace(
-      /^  (rating_score|rating_feedback|rated_at).*\n/gm,
-      "",
-    );
-    for (const sql of previous
-      .split(";")
-      .map((s) => s.trim())
-      .filter(Boolean))
-      await db.execute(sql);
-    for (const role of ["driver", "passenger"])
-      await db.execute({
-        sql: "INSERT INTO users (id,name,email,password_hash,student_number,role,status,created_at,updated_at) VALUES (?,?,?,'preserved','STUDENT',?,'approved','2026-01-01','2026-01-01')",
-        args: [role, role, role + "@example.com", role],
-      });
-    await db.execute(
-      "INSERT INTO bookings (id,driver_id,passenger_id,from_zone,to_zone,departure_at,status,quoted_price,payment_method,pickup_note,arrived_at,created_at,updated_at) VALUES ('finished','driver','passenger','Pickup','Destination','2026-01-01','completed',800,'cash','Side gate','2026-01-01T00:01:00Z','2026-01-01','2026-01-01')",
-    );
-    const before = (await db.execute("SELECT * FROM bookings")).rows[0];
-    await initializeSchema(db);
-    const after = (await db.execute("SELECT * FROM bookings")).rows[0];
-    for (const [key, value] of Object.entries(before))
-      assert.equal(after[key], value);
-    for (const key of ["rating_score", "rating_feedback", "rated_at"])
-      assert.equal(after[key], null);
-    await db.execute(
-      "UPDATE bookings SET rating_score=4,rating_feedback='Helpful driver',rated_at='2026-01-02' WHERE id='finished'",
-    );
-    await initializeSchema(db);
-    await initializeSchema(db);
-    const reviewed = (await db.execute("SELECT * FROM bookings")).rows[0];
-    assert.equal(reviewed.rating_score, 4);
-    assert.equal(reviewed.rating_feedback, "Helpful driver");
-    assert.equal(reviewed.rated_at, "2026-01-02");
-    for (const score of [0, 6, 1.5])
-      await assert.rejects(
-        db.execute({
-          sql: "UPDATE bookings SET rating_score=? WHERE id='finished'",
-          args: [score],
-        }),
+test("retired review fields stay compatible without adding or exposing them", async () => {
+  assert.equal(SCHEMA_SQL.includes("rating_score"), false);
+  for (const rebuilding of [false, true]) {
+    const dir = await mkdtemp(join(tmpdir(), "grabstudent-migration-"));
+    const db = createClient({ url: "file:" + join(dir, "compatibility.db") });
+    try {
+      const schema = rebuilding
+        ? SCHEMA_SQL.replace(
+            "  ride_id TEXT REFERENCES rides(id) ON DELETE CASCADE,",
+            "  ride_id TEXT NOT NULL REFERENCES rides(id) ON DELETE CASCADE,",
+          )
+        : SCHEMA_SQL;
+      for (const sql of schema
+        .split(";")
+        .map((s) => s.trim())
+        .filter(Boolean))
+        await db.execute(sql);
+      for (const [column, definition] of [
+        ["rating_score", "INTEGER"],
+        ["rating_feedback", "TEXT"],
+        ["rated_at", "TEXT"],
+      ])
+        await db.execute(
+          `ALTER TABLE bookings ADD COLUMN ${column} ${definition}`,
+        );
+      for (const role of ["driver", "passenger"])
+        await db.execute({
+          sql: "INSERT INTO users (id,name,email,password_hash,student_number,role,status,created_at,updated_at) VALUES (?,?,?,'preserved','STUDENT',?,'approved','2026-01-01','2026-01-01')",
+          args: [role, role, role + "@example.com", role],
+        });
+      await db.execute(
+        "INSERT INTO rides VALUES ('legacy-ride','driver','Pickup','Destination','2026-01-01',4,1,8,'open','2026-01-01')",
       );
-    await assert.rejects(
-      db.execute({
-        sql: "UPDATE bookings SET rating_feedback=? WHERE id='finished'",
-        args: ["x".repeat(501)],
-      }),
-    );
-    assert.equal((await db.execute("PRAGMA foreign_key_check")).rows.length, 0);
-  } finally {
-    db.close();
-    global.gc?.();
-    await new Promise((r) => setTimeout(r, 100));
-    assert.equal(
-      dir.startsWith(join(tmpdir(), "grabstudent-migration-")),
-      true,
-    );
-    await rm(dir, {
-      recursive: true,
-      force: true,
-      maxRetries: 10,
-      retryDelay: 200,
-    });
+      await db.execute(
+        "INSERT INTO bookings (id,ride_id,driver_id,passenger_id,passenger_count,from_zone,to_zone,departure_at,status,quoted_price,payment_method,pickup_note,arrived_at,rating_score,rating_feedback,rated_at,created_at,updated_at) VALUES ('finished','legacy-ride','driver','passenger',3,'Pickup','Destination','2026-01-01','completed',800,'cash','Side gate','2026-01-01T00:01:00Z',4,'Historical feedback','2026-01-02','2026-01-01','2026-01-01')",
+      );
+      const before = (await db.execute("SELECT * FROM bookings")).rows[0];
+      await initializeSchema(db);
+      await initializeSchema(db);
+      const after = (await db.execute("SELECT * FROM bookings")).rows[0];
+      for (const [key, value] of Object.entries(before))
+        assert.equal(after[key], value);
+      const exposed = (await db.execute(BOOKING_SELECT)).rows[0];
+      for (const column of [
+        "rating_score",
+        "rating_feedback",
+        "rated_at",
+        "driver_rating_average",
+        "driver_rating_count",
+      ])
+        assert.equal(column in exposed, false);
+      assert.equal(exposed.passenger_count, 3);
+      assert.equal(exposed.quoted_price, 800);
+      assert.equal(exposed.pickup_note, "Side gate");
+      assert.equal(
+        (await db.execute("PRAGMA foreign_key_check")).rows.length,
+        0,
+      );
+    } finally {
+      db.close();
+      global.gc?.();
+      await new Promise((r) => setTimeout(r, 100));
+      assert.equal(
+        dir.startsWith(join(tmpdir(), "grabstudent-migration-")),
+        true,
+      );
+      await rm(dir, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 200,
+      });
+    }
   }
 });
