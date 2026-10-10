@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { handleError } from "@/lib/http";
 import {
   walletRanges,
+  WALLET_INCOME_SELECT,
   type WalletPeriod,
   type WalletSummary,
 } from "@/lib/wallet";
@@ -20,7 +21,7 @@ export async function GET() {
     const summaries = await Promise.all(
       Object.entries(ranges).map(async ([period, range]) => {
         const result = await getDb().execute({
-          sql: `SELECT COALESCE(SUM(quoted_price),0) as total,COALESCE(SUM(CASE WHEN payment_method='cash' THEN quoted_price ELSE 0 END),0) as cash,COALESCE(SUM(CASE WHEN payment_method='qr' THEN quoted_price ELSE 0 END),0) as qr,COUNT(*) as journeys FROM bookings WHERE ${eligible} AND ${recordedAt}>=? AND ${recordedAt}<?`,
+          sql: `SELECT COALESCE(SUM(amount),0) as total,COALESCE(SUM(CASE WHEN payment_method='cash' THEN amount ELSE 0 END),0) as cash,COALESCE(SUM(CASE WHEN payment_method='qr' THEN amount ELSE 0 END),0) as qr,COALESCE(SUM(journeys),0) as journeys FROM (${WALLET_INCOME_SELECT}) WHERE driver_id=? AND recorded_at<=? AND recorded_at>=? AND recorded_at<?`,
           args: [user.id, now.toISOString(), range.start, range.end],
         });
         const row = result.rows[0];

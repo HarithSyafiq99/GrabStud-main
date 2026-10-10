@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS users (
   car_type TEXT NOT NULL DEFAULT '',
   car_plate TEXT NOT NULL DEFAULT '',
   onboarding_seen_at TEXT,
+  deleted_at TEXT,
+  rejection_reason TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -73,3 +75,31 @@ CREATE INDEX IF NOT EXISTS idx_rides_status ON rides(status);
 CREATE INDEX IF NOT EXISTS idx_bookings_ride ON bookings(ride_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_passenger ON bookings(passenger_id);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at);
+
+CREATE TABLE IF NOT EXISTS monthly_booking_reports (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT REFERENCES users(id),
+  audience_role TEXT NOT NULL CHECK (audience_role IN ('passenger','driver','admin')),
+  month TEXT NOT NULL,
+  booking_count INTEGER NOT NULL CHECK (booking_count > 0),
+  latest_booking_at TEXT NOT NULL DEFAULT '',
+  latest_booking_id TEXT NOT NULL DEFAULT '',
+  pdf_data BLOB NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_monthly_reports_owner ON monthly_booking_reports(owner_id,month,audience_role);
+
+CREATE TABLE IF NOT EXISTS monthly_booking_archive_runs (
+  month TEXT PRIMARY KEY,
+  started_at TEXT NOT NULL,
+  finished_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS archived_driver_earnings (
+  driver_id TEXT NOT NULL REFERENCES users(id),
+  recorded_day TEXT NOT NULL,
+  payment_method TEXT NOT NULL CHECK (payment_method IN ('cash','qr')),
+  amount INTEGER NOT NULL CHECK (amount > 0),
+  journeys INTEGER NOT NULL CHECK (journeys > 0),
+  PRIMARY KEY (driver_id,recorded_day,payment_method)
+);

@@ -777,6 +777,209 @@ h3 {
   margin-left: auto;
   color: #a493b7;
 }
+.account-profile-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 44px;
+  border-radius: 12px;
+}
+.account-profile-link:hover p,
+.topbar-profile-link:hover {
+  color: #7953be;
+}
+.topbar-profile-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  min-width: 44px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+.topbar-profile-link span:last-child {
+  max-width: 135px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-page {
+  max-width: 760px;
+  margin-inline: auto;
+}
+.profile-panel {
+  padding: clamp(20px, 4vw, 32px);
+}
+.profile-overview-header {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+}
+.profile-overview .avatar-large {
+  width: 80px;
+  height: 80px;
+  border-radius: 22px;
+  font-size: 24px;
+}
+.profile-overview-identity {
+  min-width: 0;
+}
+.profile-overview-identity h2 {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.profile-overview-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.profile-account-role {
+  padding: 5px 10px;
+  border-radius: 20px;
+  background: #f1eafa;
+  color: var(--purple);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.profile-overview-section {
+  padding-top: 24px;
+  margin-top: 24px;
+  border-top: 1px solid var(--line);
+}
+.profile-overview-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 650;
+}
+.profile-overview-section h3 svg {
+  color: var(--purple);
+}
+.profile-details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  margin-top: 18px;
+}
+.profile-details-grid > div {
+  min-width: 0;
+}
+.profile-details-grid dt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.profile-details-grid dd {
+  margin: 8px 0 0;
+  font-size: 14px;
+  font-weight: 550;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.profile-details-grid dd a:hover {
+  color: var(--purple);
+}
+.profile-vehicle-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.profile-plate-number {
+  letter-spacing: 0.06em;
+}
+.profile-edit-button {
+  min-height: 44px;
+}
+@media (max-width: 600px) {
+  .profile-overview-header {
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 16px;
+  }
+  .profile-overview .avatar-large {
+    width: 64px;
+    height: 64px;
+    border-radius: 18px;
+    font-size: 20px;
+  }
+  .profile-overview-identity h2 {
+    font-size: 20px;
+  }
+  .profile-edit-button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+  .profile-details-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+  .profile-overview-section {
+    padding-top: 20px;
+    margin-top: 20px;
+  }
+}
+.profile-fields {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.passport-preview {
+  width: 175px;
+  height: 225px;
+  display: block;
+  margin: 0 auto;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+.photo-confirmation {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.photo-confirmation input {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  accent-color: #7953be;
+}
+.rejection-notice {
+  text-align: left;
+  margin: 20px 0;
+  padding: 18px;
+  border: 1px solid #f2cad5;
+  border-radius: 16px;
+  background: #fff4f6;
+  overflow-wrap: anywhere;
+}
+.rejection-notice p {
+  white-space: pre-wrap;
+  margin: 8px 0;
+  color: #814255;
+}
+.rejection-notice small {
+  color: #876b77;
+}
+@media (max-width: 600px) {
+  .topbar-profile-link span:last-child {
+    display: none;
+  }
+  .photo-picker .photo-guidelines {
+    max-width: 100%;
+  }
+}
 .workspace {
   min-width: 0;
 }
@@ -1523,6 +1726,217 @@ h3 {
 }
 .admin-user-editor {
   max-width: 720px;
+}
+.booking-reports {
+  margin-top: 24px;
+  padding: 24px;
+  min-width: 0;
+}
+.booking-reports-heading {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+.booking-reports-intro {
+  min-width: 0;
+}
+.booking-reports-intro .section-subtitle {
+  margin-top: 6px;
+  line-height: 1.6;
+}
+.booking-reports-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: #f1eafa;
+  color: var(--purple);
+}
+.booking-reports-archive {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.booking-retention-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 20px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #faf7fe;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.booking-retention-note > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--purple);
+}
+.booking-retention-note p {
+  margin: 0;
+  min-width: 0;
+}
+.booking-reports-archive summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  min-height: 44px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--purple);
+  list-style: none;
+  border-radius: 12px;
+}
+.booking-reports-archive summary::-webkit-details-marker {
+  display: none;
+}
+.booking-reports-archive summary:hover {
+  background: #faf7fe;
+}
+.booking-reports-archive summary:focus-visible {
+  outline: 3px solid #b49adf;
+  outline-offset: 2px;
+}
+.booking-reports-archive summary strong {
+  font-weight: 600;
+}
+.booking-reports-archive summary span {
+  min-width: 26px;
+  padding: 2px 8px;
+  text-align: center;
+  border-radius: 12px;
+  background: #f1eafa;
+}
+.booking-archive-chevron {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.booking-reports-archive[open] .booking-archive-chevron {
+  transform: rotate(90deg);
+}
+.booking-reports-empty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 18px 16px;
+  border-radius: 12px;
+  background: #faf9fd;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.booking-reports-empty svg {
+  flex-shrink: 0;
+  color: #a28ac1;
+}
+.booking-reports-archive ul {
+  list-style: none;
+  padding: 0;
+}
+.booking-reports-archive li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+.booking-reports-archive li strong {
+  font-size: 13px;
+}
+.booking-reports-archive li p {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.booking-reports .btn {
+  min-height: 44px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .booking-archive-chevron {
+    transition: transform 180ms var(--ease-out);
+  }
+}
+@media (max-width: 600px) {
+  .booking-reports {
+    padding: 20px 16px;
+  }
+  .booking-reports-heading {
+    grid-template-columns: 40px minmax(0, 1fr);
+    gap: 12px;
+  }
+  .booking-reports-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+  }
+  .booking-reports-heading > .download-action {
+    grid-column: 1 / -1;
+  }
+  .booking-reports .download-action,
+  .booking-reports .download-action .btn {
+    width: 100%;
+  }
+  .booking-retention-note {
+    padding: 12px;
+  }
+  .booking-reports-archive summary {
+    padding-inline: 8px;
+  }
+}
+.admin-remove-account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 24px;
+  padding: 18px;
+  border: 1px solid #f2d8de;
+  border-radius: 14px;
+  background: #fff8fa;
+}
+.admin-remove-account > div {
+  flex: 1 1 240px;
+}
+.admin-remove-account h3 {
+  font-size: 14px;
+  font-weight: 650;
+  color: #a43c53;
+}
+.admin-remove-account p {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.admin-remove-account .btn,
+.admin-removal-confirm .btn {
+  min-height: 44px;
+}
+.admin-removal-identity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px;
+  margin-bottom: 20px;
+  border-radius: 14px;
+  background: #fff1f5;
+  color: #a43c53;
+}
+.admin-removal-identity > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.admin-removal-identity p {
+  font-size: 12px;
+  margin-top: 4px;
 }
 .admin-editor-fields {
   min-width: 0;

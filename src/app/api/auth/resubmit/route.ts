@@ -15,8 +15,8 @@ export async function POST(request: Request) {
       (user.role === "driver" && !validDocument(b.license_doc))
     )
       return jsonError("Upload valid documents (max 1.5MB each).");
-    await getDb().execute({
-      sql: "UPDATE users SET student_id_doc=?,license_doc=?,status='pending',updated_at=? WHERE id=?",
+    const updated = await getDb().execute({
+      sql: "UPDATE users SET student_id_doc=?,license_doc=?,status='pending',rejection_reason=NULL,updated_at=? WHERE id=? AND status='rejected' AND deleted_at IS NULL",
       args: [
         b.student_id_doc,
         user.role === "driver" ? b.license_doc : null,
@@ -24,8 +24,9 @@ export async function POST(request: Request) {
         user.id,
       ],
     });
+    if (!updated.rowsAffected) return jsonError("Unauthorized", 401);
     await writeAudit(user.id, "RESUBMIT", "Updated documents for review");
-    await createSession({ ...user, status: "pending" });
+    await createSession({ ...user, status: "pending", rejection_reason: null });
     return NextResponse.json({ ok: true });
   } catch (e) {
     return handleError(e);

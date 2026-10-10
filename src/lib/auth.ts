@@ -53,7 +53,7 @@ export async function getSession(): Promise<SessionUser | null> {
     const { payload } = await jwtVerify(token, secret());
     await ensureSchema();
     const result = await getDb().execute({
-      sql: `SELECT ${SESSION_COLUMNS} FROM users WHERE id = ?`,
+      sql: `SELECT ${SESSION_COLUMNS} FROM users WHERE id = ? AND deleted_at IS NULL`,
       args: [String(payload.sub)],
     });
     const row = result.rows[0];

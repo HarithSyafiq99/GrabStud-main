@@ -8,7 +8,7 @@ import { SCHEMA_SQL } from "../src/lib/schema";
 import { initializeSchema } from "../src/lib/migrations";
 import { BOOKING_SELECT } from "../src/lib/bookings";
 const previousSchema = SCHEMA_SQL.replace(
-  /^  (session_version|profile_photo|car_colour|car_type|car_plate|onboarding_seen_at|passenger_count|pickup_note|pickup_lat|pickup_lng|destination_lat|destination_lng|arrived_at|arrival_acknowledged_at|rating_score|rating_feedback|rated_at).*\n/gm,
+  /^  (rejection_reason|deleted_at|session_version|profile_photo|car_colour|car_type|car_plate|onboarding_seen_at|passenger_count|pickup_note|pickup_lat|pickup_lng|destination_lat|destination_lng|arrived_at|arrival_acknowledged_at|rating_score|rating_feedback|rated_at).*\n/gm,
   "",
 );
 
@@ -78,6 +78,7 @@ test("legacy migration preserves accounts, accepted fares, pending requests and 
     assert.equal(demo.phone_number, "+60100000001");
     assert.equal(demo.password_hash, "demo-hash");
     assert.ok(users.rows.every((u) => Number(u.session_version) === 0));
+    assert.ok(users.rows.every((u) => u.deleted_at === null));
     const accepted = (
       await db.execute("SELECT * FROM bookings WHERE id='accepted'")
     ).rows[0];

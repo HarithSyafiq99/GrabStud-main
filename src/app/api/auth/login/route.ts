@@ -20,7 +20,7 @@ export async function POST(request: Request) {
 
     const db = getDb();
     const result = await db.execute({
-      sql: "SELECT * FROM users WHERE email = ?",
+      sql: "SELECT * FROM users WHERE email = ? AND deleted_at IS NULL",
       args: [email],
     });
     const row = result.rows[0];

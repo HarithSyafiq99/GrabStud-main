@@ -1,4 +1,12 @@
 export type WalletPeriod = "daily" | "weekly" | "monthly";
+// Archived income keeps only daily totals; booking details remain in the saved PDFs.
+export const WALLET_INCOME_SELECT = `
+  SELECT driver_id,quoted_price AS amount,payment_method,1 AS journeys,
+    COALESCE(arrived_at,departure_at) AS recorded_at FROM bookings
+  WHERE quoted_price>0 AND (status='completed' OR (status='accepted' AND arrived_at IS NOT NULL))
+  UNION ALL
+  SELECT driver_id,amount,payment_method,journeys,recorded_day AS recorded_at
+  FROM archived_driver_earnings`;
 export function walletRanges(now = new Date()) {
   const local = new Date(now.getTime() + 8 * 60 * 60 * 1000);
   const day = Date.UTC(

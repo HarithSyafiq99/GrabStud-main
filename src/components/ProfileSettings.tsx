@@ -29,14 +29,19 @@ export function ProfileSettings({ user }: { user: SessionUser }) {
     </>
   );
 }
-function ProfileEditor({
+export function ProfileEditor({
   user,
   onClose,
+  inline = false,
+  onSaved,
 }: {
   user: SessionUser;
   onClose: () => void;
+  inline?: boolean;
+  onSaved?: () => void;
 }) {
-  const [photo, setPhoto] = useState(user.profile_photo),
+  const [name, setName] = useState(user.name),
+    [photo, setPhoto] = useState(user.profile_photo),
     [phone, setPhone] = useState(user.phone_number),
     [vehicle, setVehicle] = useState({
       car_colour: user.car_colour,
@@ -50,8 +55,11 @@ function ProfileEditor({
   const pending = busy || navigating;
   const [saved, setSaved] = useState(false);
   useEffect(() => {
-    if (saved && !pending) onClose();
-  }, [saved, pending, onClose]);
+    if (saved && !pending && !inline) {
+      onSaved?.();
+      onClose();
+    }
+  }, [saved, pending, onClose, inline, onSaved]);
   async function save(event: FormEvent) {
     event.preventDefault();
     if (pending) return;
@@ -61,11 +69,13 @@ function ProfileEditor({
     }
     setBusy(true);
     setError("");
+    setSaved(false);
     try {
       await api("/api/auth/me", {
         method: "PATCH",
         loadingLabel: "Saving your profile…",
         body: JSON.stringify({
+          name,
           phone_number: phone,
           profile_photo: photo,
           ...(user.role === "driver" ? vehicle : {}),
@@ -79,49 +89,67 @@ function ProfileEditor({
       setBusy(false);
     }
   }
-  return (
-    <>
-      <BookingProgress active={pending} label="Saving your profile…" />
-      <Modal
-        open
-        title="My profile"
-        onClose={() => {
-          if (!pending) onClose();
-        }}
-      >
-        <form onSubmit={save}>
-          <p className="text-xs muted mb-4">
-            Your photo and contact details are shared with the driver or
-            passenger on your journey.
-          </p>
-          {user.role !== "admin" ? (
-            <ProfilePhotoPicker
-              value={photo}
-              onChange={setPhoto}
-              required={user.role === "driver"}
-              name={user.name}
-            />
-          ) : null}
-          <label className="field mt-4">
-            Phone number
-            <input
-              className="input"
-              type="tel"
-              required
-              maxLength={25}
-              autoComplete="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-            />
-          </label>
-          {user.role === "driver" ? (
-            <VehicleFields value={vehicle} onChange={setVehicle} />
-          ) : null}
-          <Notice message={error} error />
-          <div className="action-group mt-4">
-            <button className="btn btn-primary" disabled={pending}>
-              {pending ? "Saving…" : "Save profile"}
-            </button>
+  const form = (
+    <form onSubmit={save}>
+      <fieldset disabled={pending} className="profile-fields">
+        <p className="text-xs muted mb-4">
+          Your photo and contact details are shared with the driver or passenger
+          on your journey.
+        </p>
+        {user.role !== "admin" ? (
+          <ProfilePhotoPicker
+            value={photo}
+            onChange={setPhoto}
+            required={user.role === "driver"}
+            name={name}
+          />
+        ) : null}
+        <label className="field mt-4">
+          Full name
+          <input
+            className="input"
+            required
+            maxLength={100}
+            autoComplete="name"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
+        <label className="field mt-4">
+          Email address
+          <input
+            className="input"
+            type="email"
+            value={user.email}
+            readOnly
+            aria-describedby="profile-email-help"
+          />
+        </label>
+        <p id="profile-email-help" className="text-xs muted mt-2">
+          Contact the administrator to change your registered email.
+        </p>
+        <label className="field mt-4">
+          Phone number
+          <input
+            className="input"
+            type="tel"
+            required
+            maxLength={25}
+            autoComplete="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+          />
+        </label>
+        {user.role === "driver" ? (
+          <VehicleFields value={vehicle} onChange={setVehicle} />
+        ) : null}
+        <Notice message={error} error />
+        <Notice message={inline && saved ? "Your profile was saved." : ""} />
+        <div className="action-group mt-4">
+          <button className="btn btn-primary" disabled={pending}>
+            {pending ? "Saving…" : "Save profile"}
+          </button>
+          {!inline ? (
             <button
               type="button"
               className="btn btn-secondary"
@@ -130,9 +158,27 @@ function ProfileEditor({
             >
               Cancel
             </button>
-          </div>
-        </form>
-      </Modal>
+          ) : null}
+        </div>
+      </fieldset>
+    </form>
+  );
+  return (
+    <>
+      <BookingProgress active={pending} label="Saving your profile…" />
+      {inline ? (
+        form
+      ) : (
+        <Modal
+          open
+          title="Edit profile"
+          onClose={() => {
+            if (!pending) onClose();
+          }}
+        >
+          {form}
+        </Modal>
+      )}
     </>
   );
 }

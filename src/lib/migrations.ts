@@ -10,6 +10,14 @@ export async function initializeSchema(db: Client) {
       .filter(Boolean))
       await tx.execute(sql);
     const users = await tx.execute("PRAGMA table_info(users)");
+    const reports = await tx.execute(
+      "PRAGMA table_info(monthly_booking_reports)",
+    );
+    for (const column of ["latest_booking_at", "latest_booking_id"])
+      if (!reports.rows.some((r) => r.name === column))
+        await tx.execute(
+          `ALTER TABLE monthly_booking_reports ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`,
+        );
     if (!users.rows.some((r) => r.name === "phone_number"))
       await tx.execute(
         "ALTER TABLE users ADD COLUMN phone_number TEXT NOT NULL DEFAULT ''",
@@ -21,6 +29,8 @@ export async function initializeSchema(db: Client) {
       ["car_type", "TEXT NOT NULL DEFAULT ''"],
       ["car_plate", "TEXT NOT NULL DEFAULT ''"],
       ["onboarding_seen_at", "TEXT"],
+      ["deleted_at", "TEXT"],
+      ["rejection_reason", "TEXT"],
     ]) {
       if (!users.rows.some((r) => r.name === column)) {
         await tx.execute(

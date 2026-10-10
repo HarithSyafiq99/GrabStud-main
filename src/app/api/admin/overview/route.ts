@@ -8,10 +8,12 @@ export async function GET() {
     requireRole(await getSession(), ["admin"]);
     const db = getDb();
     const users = await db.execute(
-      "SELECT status,COUNT(*) as count FROM users WHERE role!='admin' GROUP BY status",
+      "SELECT status,COUNT(*) as count FROM users WHERE deleted_at IS NULL AND role!='admin' GROUP BY status",
     );
     const rides = await db.execute("SELECT COUNT(*) as total FROM rides");
-    const allUsers = await db.execute("SELECT COUNT(*) as total FROM users");
+    const allUsers = await db.execute(
+      "SELECT COUNT(*) as total FROM users WHERE deleted_at IS NULL",
+    );
     return NextResponse.json({
       counts: {
         ...Object.fromEntries(

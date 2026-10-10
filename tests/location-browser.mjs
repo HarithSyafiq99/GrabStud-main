@@ -1,3 +1,4 @@
+import { passportPhoto } from "./photo-fixtures.mjs";
 // Standalone Edge/CDP check: node --expose-gc --import tsx tests/location-browser.mjs
 // Uses synthetic accounts, temporary SQLite, and intercepted geocoder/tile requests.
 import assert from "node:assert/strict";
@@ -36,6 +37,10 @@ try {
     .filter(Boolean))
     await db.execute(sql);
   const now = new Date().toISOString();
+  await db.execute({
+    sql: "INSERT INTO users (id,name,email,password_hash,student_number,role,status,onboarding_seen_at,created_at,updated_at) VALUES ('admin','Test Admin','admin-map@example.com','unused','ADMIN','admin','approved',?,?,?)",
+    args: [now, now, now],
+  });
   await db.execute({
     sql: "INSERT INTO users (id,name,email,password_hash,student_number,phone_number,role,status,onboarding_seen_at,created_at,updated_at) VALUES ('passenger','Map Passenger','map@example.com','unused','MAP','+60123456789','passenger','approved',?,?,?)",
     args: [now, now, now],
@@ -986,6 +991,548 @@ try {
     ),
     "driver dashboard has no rating summary or feedback",
   );
+  for (const [id, pickup, status, created] of [
+    [
+      "ui-driver-old",
+      "Earlier driver pickup",
+      "offered",
+      "2098-01-01T00:00:00Z",
+    ],
+    [
+      "ui-driver-latest-a",
+      "Tied earlier pickup",
+      "accepted",
+      "2099-06-01T00:00:00Z",
+    ],
+    [
+      "ui-driver-latest-z",
+      "Latest driver pickup",
+      "cancelled",
+      "2099-06-01T00:00:00Z",
+    ],
+  ])
+    await db.execute({
+      sql: "INSERT INTO bookings (id,passenger_id,driver_id,from_zone,to_zone,departure_at,status,payment_method,quoted_price,created_at,updated_at) VALUES (?,'passenger','driver',?,'Driver destination','2099-12-01T04:00:00Z',?,'cash',600,?,?)",
+      args: [id, pickup, status, created, created],
+    });
+  await send("Page.reload");
+  await until(
+    "document.querySelector('.driver-current-booking')?.textContent.includes('Latest driver pickup') && !document.querySelector('.booking-progress')",
+    "latest driver current booking",
+  );
+  check(
+    await evaluate(
+      "document.querySelector('.driver-current-booking h2').textContent==='Current Booking' && document.querySelectorAll('.driver-current-booking .booking-item').length===1 && !document.querySelector('.driver-current-booking').textContent.includes('Earlier driver pickup') && !document.body.textContent.includes('My selected passengers') && !document.querySelector('.booking-reports')",
+    ),
+    "Driver hub shows one latest Current Booking and no Booking reports section",
+  );
+  check(
+    await evaluate(
+      "document.querySelector('.driver-current-booking .booking-actions').textContent.includes('cancelled') && !document.querySelector('.driver-current-booking .driver-arrival,.driver-current-booking .action-group button')",
+    ),
+    "cancelled latest driver order stays visible without active booking actions",
+  );
+  await db.execute(
+    "UPDATE bookings SET status='completed' WHERE id='ui-driver-latest-z'",
+  );
+  await click(".driver-current-booking .section-row button");
+  await until(
+    "document.querySelector('.driver-current-booking .booking-actions')?.textContent.includes('completed') && !document.querySelector('.booking-progress')",
+    "driver current booking refresh",
+  );
+  check(
+    await evaluate(
+      "document.querySelectorAll('.driver-current-booking .booking-item').length===1 && document.querySelector('.driver-current-booking').textContent.includes('Latest driver pickup')",
+    ),
+    "refresh preserves only the latest completed driver booking",
+  );
+  for (const id of [
+    "ui-driver-old",
+    "ui-driver-latest-a",
+    "ui-driver-latest-z",
+  ])
+    await db.execute({ sql: "DELETE FROM bookings WHERE id=?", args: [id] });
+  await send("Page.navigate", { url: base + "/history" });
+  await until(
+    "document.querySelector('.booking-reports-heading .download-action button') && document.querySelector('tbody tr') && !document.querySelector('.booking-progress')",
+    "driver PDF report control",
+  );
+  const capturePdfDownloads = async () =>
+    evaluate(`(() => {
+    window.__pdfDownloads=[];
+    const original=HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click=function() {
+      if(this.download && this.href.startsWith('blob:')) {
+        const entry={filename:this.download}; window.__pdfDownloads.push(entry);
+        fetch(this.href).then(r=>r.arrayBuffer()).then(b=>{entry.size=b.byteLength;entry.signature=new TextDecoder().decode(b.slice(0,5));});
+        return;
+      }
+      original.call(this);
+    };
+  })()`);
+  await capturePdfDownloads();
+  await click(".booking-reports-heading .download-action button");
+  await until(
+    "window.__pdfDownloads[0]?.signature==='%PDF-' && !document.querySelector('.booking-progress')",
+    "driver PDF download",
+  );
+  check(
+    await evaluate(
+      "window.__pdfDownloads[0].filename==='grabstudent-bookings-driver.pdf' && window.__pdfDownloads[0].size>1000",
+    ),
+    "driver PDF button downloads a real named PDF using the existing loader",
+  );
+  const { createBookingPdf } = await import("../src/lib/booking-reports.ts");
+  const archivedPdf = await createBookingPdf([], {
+    name: "Group Driver",
+    role: "driver",
+    month: "2026-09",
+    archived: true,
+  });
+  await db.execute({
+    sql: "INSERT INTO monthly_booking_reports (id,owner_id,audience_role,month,booking_count,pdf_data,created_at) VALUES ('browser-archive','driver','driver','2026-09',1,?,?)",
+    args: [Buffer.from(archivedPdf), now],
+  });
+  await send("Page.navigate", { url: base + "/history" });
+  await until(
+    "document.querySelector('.booking-reports-archive summary span')?.textContent==='1'",
+    "saved monthly report list",
+  );
+  await capturePdfDownloads();
+  await click(".booking-reports-archive summary");
+  check(
+    await evaluate(
+      "document.querySelector('.booking-reports-archive li').textContent.includes('September 2026')",
+    ),
+    "saved monthly PDF is listed in driver History",
+  );
+  for (const width of [320, 390, 1280]) {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: width < 768,
+    });
+    await delay(200);
+    check(
+      await evaluate(
+        "document.documentElement.scrollWidth<=innerWidth+1 && [...document.querySelectorAll('.booking-reports .btn')].every(e=>{const r=e.getBoundingClientRect();return r.height>=44 && r.right<=innerWidth+1;})",
+      ),
+      `PDF report controls fit ${width}px with touch targets`,
+    );
+  }
+  await click(".booking-reports-archive li .download-action button");
+  await until(
+    "window.__pdfDownloads[0]?.filename==='grabstudent-2026-09-driver.pdf' && window.__pdfDownloads[0]?.signature==='%PDF-'",
+    "archived PDF download",
+  );
+  check(true, "saved monthly PDF downloads from durable archive storage");
+  await send("Network.setCookie", {
+    name: "gs_session",
+    value: token,
+    url: base,
+    httpOnly: true,
+    sameSite: "Lax",
+  });
+  await send("Page.navigate", { url: base + "/passenger" });
+  await until(
+    "document.querySelector('.current-booking-card') && !document.querySelector('.booking-progress')",
+    "passenger dashboard without reports",
+  );
+  check(
+    await evaluate(
+      "!document.querySelector('.booking-reports') && document.querySelectorAll('.current-booking-card').length===1",
+    ),
+    "Request a journey keeps the latest booking and has no Booking reports section",
+  );
+  await send("Page.navigate", { url: base + "/history" });
+  await until(
+    "document.querySelector('.booking-reports-heading button') && document.querySelector('tbody tr') && !document.querySelector('.booking-progress')",
+    "passenger reports in History",
+  );
+  check(
+    await evaluate(
+      "document.querySelector('.booking-reports-heading button').textContent==='Download PDF'",
+    ),
+    "passenger PDF reports remain available in History",
+  );
+  // Profile access is available from the navigation and the user's own identity.
+  check(
+    await evaluate(
+      "!!document.querySelector('.sidebar a[href=\"/profile\"]') && document.querySelector('.topbar-profile-link').textContent.includes('Map Passenger')",
+    ),
+    "passenger sidebar and account identity link to Profile",
+  );
+  await click(".account-profile-link p");
+  await until(
+    "location.pathname==='/profile' && document.querySelector('.profile-overview') && !document.querySelector('.booking-progress')",
+    "passenger profile page",
+  );
+  check(
+    await evaluate(
+      "document.querySelector('.profile-overview').textContent.includes('map@example.com') && !document.querySelector('.profile-fields') && !!document.querySelector('.profile-edit-button')",
+    ),
+    "profile opens with passenger overview details and an Edit profile button",
+  );
+  for (const width of [320, 390, 1280]) {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: width < 768,
+    });
+    await delay(200);
+    check(
+      await evaluate(
+        "document.documentElement.scrollWidth<=innerWidth+1 && [...document.querySelectorAll('.mobile-bottom-nav a')].filter(e=>e.getClientRects().length).every(e=>e.getBoundingClientRect().height>=44)",
+      ),
+      "profile and navigation fit " + width + "px",
+    );
+  }
+  await click(".profile-edit-button");
+  await until(
+    "document.querySelector('.profile-fields')",
+    "edit profile dialog",
+  );
+  await setInput(
+    '.profile-fields input[autocomplete="name"]',
+    "Unsaved profile name",
+  );
+  await click(".profile-fields button.btn-secondary");
+  await until(
+    "!document.querySelector('.profile-fields')",
+    "cancel returns to overview",
+  );
+  check(
+    await evaluate(
+      "document.querySelector('.profile-overview-identity h2').textContent==='Map Passenger'",
+    ),
+    "cancelling profile edits keeps the overview unchanged",
+  );
+  await click(".profile-edit-button");
+  await until(
+    "document.querySelector('.profile-fields')",
+    "profile editor reopened",
+  );
+  const upload = async (data) =>
+    evaluate(
+      "(() => { const data=" +
+        JSON.stringify(data) +
+        "; const bytes=Uint8Array.from(atob(data.split(',')[1]),c=>c.charCodeAt(0)); const transfer=new DataTransfer(); transfer.items.add(new File([bytes],'passport.png',{type:'image/png'})); const input=document.querySelector('.photo-upload input'); input.files=transfer.files; input.dispatchEvent(new Event('change',{bubbles:true})); })()",
+    );
+  await upload(passportPhoto(450, 350));
+  await until(
+    "document.querySelector('.photo-picker [role=\"alert\"]')?.textContent.includes('proportions')",
+    "landscape rejection",
+  );
+  check(true, "photo upload rejects landscape images with actionable guidance");
+  await upload(passportPhoto());
+  await until(
+    "document.querySelector('.passport-photo-modal') && !document.querySelector('.booking-progress')",
+    "passport preview",
+  );
+  check(
+    await evaluate(
+      "document.querySelector('.passport-photo-modal .btn-primary').disabled",
+    ),
+    "passport photo requires guideline confirmation before use",
+  );
+  await click(".photo-confirmation input");
+  await click(".passport-photo-modal .btn-primary");
+  await until(
+    "!document.querySelector('.passport-photo-modal') && document.querySelector('.photo-picker .avatar img')",
+    "photo applied",
+  );
+  await setInput(
+    '.profile-fields input[autocomplete=\"name\"]',
+    "Map Passenger Updated",
+  );
+  await click(".profile-fields .btn-primary");
+  await until(
+    "document.body.textContent.includes('Your profile was saved.') && document.querySelector('.profile-overview-identity h2').textContent==='Map Passenger Updated' && !document.querySelector('.profile-fields') && !document.querySelector('.booking-progress')",
+    "profile saved",
+  );
+  check(
+    (
+      await db.execute(
+        "SELECT name,profile_photo FROM users WHERE id='passenger'",
+      )
+    ).rows[0].name === "Map Passenger Updated",
+    "profile saves personal details and refreshes account identity",
+  );
+  await click(".profile-edit-button");
+  await until(
+    "document.querySelector('.profile-fields')",
+    "edit saved profile",
+  );
+  await setInput(
+    '.profile-fields input[autocomplete=\"name\"]',
+    "Map Passenger",
+  );
+  await click(".profile-fields .btn-primary");
+  await until(
+    "document.querySelector('.profile-overview-identity h2').textContent==='Map Passenger' && !document.querySelector('.profile-fields') && !document.querySelector('.booking-progress')",
+    "profile name restored",
+  );
+  await send("Page.navigate", { url: base + "/passenger" });
+  await until(
+    "document.querySelector('.current-booking-card') && !document.querySelector('.booking-progress')",
+    "passenger dashboard restored",
+  );
+  await click(".topbar-profile-link .avatar");
+  await until(
+    "location.pathname==='/profile' && document.querySelector('.profile-overview')",
+    "avatar profile link",
+  );
+  check(true, "clicking the account avatar opens the profile overview");
+  await send("Network.setCookie", {
+    name: "gs_session",
+    value: driverToken,
+    url: base,
+    httpOnly: true,
+    sameSite: "Lax",
+  });
+  await send("Page.navigate", { url: base + "/profile" });
+  await until(
+    "document.querySelector('.profile-overview') && document.querySelector('.topbar-profile-link').textContent.includes('Group Driver')",
+    "driver profile",
+  );
+  check(
+    await evaluate(
+      "!!document.querySelector('.sidebar a[href=\"/profile\"]') && document.querySelector('.profile-overview').textContent.includes('Perodua Myvi') && document.querySelector('.profile-overview').textContent.includes('TEST123') && !document.querySelector('.profile-fields')",
+    ),
+    "driver overview shows car details before opening the editor",
+  );
+  await until(
+    "performance.getEntriesByType('resource').some(entry=>entry.name.endsWith('/api/notifications'))",
+    "driver profile interactive",
+  );
+  await click(".profile-edit-button");
+  await until("document.querySelector('.profile-fields')", "driver editor");
+  check(
+    await evaluate(
+      "document.querySelector('.photo-picker').textContent.includes('Required for drivers') && document.querySelector('.profile-fields').textContent.includes('Car colour')",
+    ),
+    "Edit profile opens driver photo and car fields",
+  );
+  await click(".profile-fields button.btn-secondary");
+  const adminToken = await new SignJWT({
+    sub: "admin",
+    role: "admin",
+    status: "approved",
+    session_version: 0,
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("1h")
+    .sign(new TextEncoder().encode(secret));
+  await send("Network.setCookie", {
+    name: "gs_session",
+    value: adminToken,
+    url: base,
+    httpOnly: true,
+    sameSite: "Lax",
+  });
+  await send("Page.navigate", { url: base + "/admin" });
+  await until(
+    "document.querySelector('[aria-label=\"Edit Map Passenger\"]') && !document.querySelector('.booking-progress')",
+    "admin user list",
+  );
+  await db.execute({
+    sql: "INSERT INTO users (id,name,email,password_hash,student_number,phone_number,role,status,student_id_doc,created_at,updated_at) VALUES ('review-candidate','Review Candidate','review@example.com','unused','REVIEW','+60123456789','passenger','pending',?,?,?)",
+    args: [photo, now, now],
+  });
+  await click(".page-heading .btn-secondary");
+  await until(
+    "document.querySelector('[aria-label=\"Edit Review Candidate\"]') && !document.querySelector('.booking-progress')",
+    "candidate visible",
+  );
+  const decline = async () =>
+    evaluate(
+      "(() => { const row=document.querySelector('[aria-label=\"Edit Review Candidate\"]').closest('tr'); [...row.querySelectorAll('button')].find(b=>b.textContent.trim()==='Decline').click(); })()",
+    );
+  await decline();
+  await until(
+    "document.querySelector('.account-modal textarea')",
+    "rejection reason dialog",
+  );
+  check(
+    await evaluate(
+      "document.querySelector('.account-modal .btn-danger').disabled",
+    ),
+    "admin cannot decline without a rejection reason",
+  );
+  await click(".account-modal .btn-secondary");
+  check(
+    (await db.execute("SELECT status FROM users WHERE id='review-candidate'"))
+      .rows[0].status === "pending",
+    "cancelling rejection leaves application pending",
+  );
+  await decline();
+  await until(
+    "document.querySelector('.account-modal textarea')",
+    "rejection dialog reopened",
+  );
+  await evaluate(
+    "(() => { const e=document.querySelector('.account-modal textarea'); Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,'Your Student ID is blurred. Please upload a clear copy.'); e.dispatchEvent(new Event('input',{bubbles:true})); })()",
+  );
+  await click(".account-modal .btn-danger");
+  await until(
+    "!document.querySelector('.account-modal') && !document.querySelector('.booking-progress')",
+    "rejection submitted",
+  );
+  check(
+    (
+      await db.execute(
+        "SELECT rejection_reason FROM users WHERE id='review-candidate'",
+      )
+    ).rows[0].rejection_reason ===
+      "Your Student ID is blurred. Please upload a clear copy.",
+    "admin rejection persists its exact explanation",
+  );
+  const candidateToken = await new SignJWT({
+    sub: "review-candidate",
+    role: "passenger",
+    status: "pending",
+    session_version: 0,
+  })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("1h")
+    .sign(new TextEncoder().encode(secret));
+  await send("Network.setCookie", {
+    name: "gs_session",
+    value: candidateToken,
+    url: base,
+    httpOnly: true,
+    sameSite: "Lax",
+  });
+  await send("Page.navigate", { url: base + "/pending" });
+  await until(
+    "document.querySelector('.rejection-notice')",
+    "user rejection status",
+  );
+  check(
+    await evaluate(
+      "document.querySelector('.rejection-notice').textContent.includes('Your Student ID is blurred. Please upload a clear copy.')",
+    ),
+    "registration status clearly explains the rejection to its owner",
+  );
+  await send("Network.setCookie", {
+    name: "gs_session",
+    value: adminToken,
+    url: base,
+    httpOnly: true,
+    sameSite: "Lax",
+  });
+  await send("Page.navigate", { url: base + "/admin" });
+  await until(
+    "document.querySelector('[aria-label=\"Edit Map Passenger\"]') && !document.querySelector('.booking-progress')",
+    "admin restored",
+  );
+  await click('[aria-label="Edit Test Admin"]');
+  await until(
+    "document.querySelector('.admin-remove-account')",
+    "own account editor",
+  );
+  check(
+    await evaluate(
+      "document.querySelector('.admin-remove-account button').disabled",
+    ),
+    "admin cannot remove their own account",
+  );
+  await click('.admin-user-editor [aria-label="Close dialog"]');
+  await click('[aria-label="Edit Map Passenger"]');
+  await until(
+    "document.querySelector('.admin-remove-account')",
+    "passenger account editor",
+  );
+  check(
+    await evaluate(
+      "!!document.querySelector('.admin-remove-account button') && !document.querySelector('.admin-remove-account button').disabled",
+    ),
+    "edit user includes an enabled remove account button",
+  );
+  await click(".admin-remove-account button");
+  await until(
+    "document.querySelector('.admin-removal-confirm')",
+    "account removal confirmation",
+  );
+  check(
+    await evaluate(
+      "document.querySelector('.admin-removal-identity').textContent.includes('Map Passenger') && document.activeElement.textContent==='Keep account'",
+    ),
+    "confirmation identifies the account and focuses the safe action",
+  );
+  check(
+    (await db.execute("SELECT deleted_at FROM users WHERE id='passenger'"))
+      .rows[0].deleted_at === null,
+    "opening removal confirmation does not delete the account",
+  );
+  for (const width of [320, 390, 1280]) {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: width < 768,
+    });
+    await delay(200);
+    check(
+      await evaluate(
+        "document.documentElement.scrollWidth<=innerWidth+1 && [...document.querySelectorAll('.admin-removal-confirm button')].every(e=>{const r=e.getBoundingClientRect();return r.height>=44 && r.right<=innerWidth+1;})",
+      ),
+      `removal confirmation fits ${width}px with touch targets`,
+    );
+  }
+  await click(".admin-removal-confirm .btn-secondary");
+  await until(
+    "document.querySelector('.admin-remove-account')",
+    "keep account returns to editor",
+  );
+  check(
+    (await db.execute("SELECT deleted_at FROM users WHERE id='passenger'"))
+      .rows[0].deleted_at === null,
+    "keep account leaves the account unchanged",
+  );
+  // Removal must not depend on the edit form's unrelated validation errors.
+  await setInput(".admin-editor-grid input", "");
+  await click(".admin-remove-account button");
+  await until(
+    "document.querySelector('.admin-removal-confirm')",
+    "second confirmation",
+  );
+  await click(".admin-removal-confirm .btn-danger");
+  await until(
+    "!document.querySelector('.admin-user-editor') && !document.querySelector('[aria-label=\"Edit Map Passenger\"]') && document.body.textContent.includes('account was removed') && !document.querySelector('.booking-progress')",
+    "removed account disappears from refreshed admin list",
+  );
+  check(
+    !!(await db.execute("SELECT deleted_at FROM users WHERE id='passenger'"))
+      .rows[0].deleted_at,
+    "confirmed removal works despite unsaved invalid edit fields",
+  );
+  check(
+    (
+      await db.execute({
+        sql: "SELECT arrived_at,status FROM bookings WHERE id=?",
+        args: [savedBooking.id],
+      })
+    ).rows[0].status === "accepted",
+    "removal preserves the already recorded arrival booking",
+  );
+  await send("Network.setCookie", {
+    name: "gs_session",
+    value: token,
+    url: base,
+    httpOnly: true,
+    sameSite: "Lax",
+  });
+  await send("Page.navigate", { url: base + "/passenger" });
+  await until(
+    "location.pathname==='/login'",
+    "removed user redirected to login",
+  );
+  check(true, "removed user session cannot reopen the passenger dashboard");
   check(errors.length === 0, "no browser runtime exceptions");
   console.log(`${checks.length} address browser checks passed`);
 } catch (error) {

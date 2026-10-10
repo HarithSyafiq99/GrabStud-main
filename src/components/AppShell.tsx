@@ -4,7 +4,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { BookingProgress } from "./BookingProgress";
 import { lockPageScroll } from "@/lib/loading";
-import { ProfileSettings } from "./ProfileSettings";
 import { Avatar } from "./Avatar";
 import { UserContext } from "./UserContext";
 import { FirstVisitGuide } from "./FirstVisitGuide";
@@ -29,6 +28,12 @@ const NAV: Record<
       mobileLabel: "My bookings",
       icon: "history",
     },
+    {
+      href: "/profile",
+      label: "Profile",
+      mobileLabel: "Profile",
+      icon: "users",
+    },
   ],
   driver: [
     {
@@ -48,6 +53,12 @@ const NAV: Record<
       label: "My wallet",
       mobileLabel: "Wallet",
       icon: "wallet",
+    },
+    {
+      href: "/profile",
+      label: "Profile",
+      mobileLabel: "Profile",
+      icon: "users",
     },
   ],
   admin: [
@@ -222,11 +233,18 @@ export function AppShell({
               <p>Share your journey, save on petrol, and keep campus moving.</p>
             </div>
             <div className="sidebar-user">
-              <Avatar name={user.name} photo={user.profile_photo} />
-              <div>
-                <p>{user.name}</p>
-                <small>{user.role} account</small>
-              </div>
+              <Link
+                href="/profile"
+                className="account-profile-link"
+                aria-label={`View profile for ${user.name}`}
+                onClick={() => setOpen(false)}
+              >
+                <Avatar name={user.name} photo={user.profile_photo} />
+                <div>
+                  <p>{user.name}</p>
+                  <small>{user.role} account</small>
+                </div>
+              </Link>
               <button
                 onClick={logout}
                 aria-label="Sign out"
@@ -313,13 +331,29 @@ export function AppShell({
                   </div>
                 ) : null}
               </div>
-              <Avatar name={user.name} photo={user.profile_photo} />
+              <Link
+                href="/profile"
+                className="topbar-profile-link"
+                aria-label={`View profile for ${user.name}`}
+              >
+                <Avatar name={user.name} photo={user.profile_photo} />
+                <span>{user.name}</span>
+              </Link>
             </div>
           </header>
           <main className="main-content" key={pathname}>
-            <div className="contact-toolbar flex justify-end mb-4">
-              <ProfileSettings user={user} />
-            </div>
+            {pathname !== "/profile" ? (
+              <div className="contact-toolbar flex justify-end mb-4">
+                <Link
+                  className="btn btn-secondary profile-trigger"
+                  href="/profile"
+                  aria-label="My profile"
+                >
+                  <Avatar name={user.name} photo={user.profile_photo} />
+                  My profile
+                </Link>
+              </div>
+            ) : null}
             {children}
             <footer className="app-footer">
               <span>

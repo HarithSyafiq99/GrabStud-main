@@ -111,7 +111,7 @@ export function PendingClient({ user: initial }: { user: SessionUser }) {
         method: "POST",
         body: JSON.stringify({ student_id_doc: id, license_doc: license }),
       });
-      setUser({ ...user, status: "pending" });
+      setUser({ ...user, status: "pending", rejection_reason: null });
       setMessage("Your updated documents have been sent for review.");
       setError(false);
     } catch (e) {
@@ -152,6 +152,19 @@ export function PendingClient({ user: initial }: { user: SessionUser }) {
               ? "Your application was declined. Submit clear, updated documents for another review."
               : "Your account is waiting for document verification. An admin will review your application before you can book or post rides."}
         </p>
+        {user.status === "rejected" && user.role !== "admin" ? (
+          <div className="rejection-notice" role="status" aria-live="polite">
+            <h3>Why your application was declined</h3>
+            <p>
+              {user.rejection_reason ||
+                "No reason was recorded for this earlier review. Please contact the administrator for details."}
+            </p>
+            <small>
+              Update the details mentioned above, then resubmit your
+              application.
+            </small>
+          </div>
+        ) : null}
         {user.role !== "admin" ? (
           <div className="pending-steps">
             <span>

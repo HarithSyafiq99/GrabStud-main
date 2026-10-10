@@ -4,6 +4,7 @@ import { getSession, requireApproved, requireRole } from "@/lib/auth";
 import { handleError, jsonError } from "@/lib/http";
 import { BOOKING_SELECT } from "@/lib/bookings";
 import { parseLocationPin, validLocationName } from "@/lib/locations";
+import { requireActiveAccount } from "@/lib/user";
 export async function GET(request: Request) {
   try {
     await ensureSchema();
@@ -12,7 +13,7 @@ export async function GET(request: Request) {
     );
     const query = new URL(request.url).searchParams;
     const available = user.role === "driver" && query.get("mine") !== "1";
-    const latest = user.role === "passenger" && query.get("latest") === "1";
+    const latest = !available && query.get("latest") === "1";
     let sql = BOOKING_SELECT;
     const args: string[] = [];
     if (available) {
@@ -110,6 +111,7 @@ export async function POST(request: Request) {
       );
     const tx = await getDb().transaction("write");
     try {
+      await requireActiveAccount(tx, user);
       const existing = await tx.execute({
         sql: "SELECT id FROM bookings WHERE passenger_id=? AND lower(from_zone)=lower(?) AND lower(to_zone)=lower(?) AND departure_at=? AND pickup_lat IS ? AND pickup_lng IS ? AND destination_lat IS ? AND destination_lng IS ? AND status IN ('pending','offered','accepted')",
         args: [

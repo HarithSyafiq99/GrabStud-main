@@ -17,6 +17,7 @@ export type SessionUser = {
   phone_number: string;
   role: Role;
   status: UserStatus;
+  rejection_reason: string | null;
   profile_photo: string | null;
   car_colour: string;
   car_type: string;

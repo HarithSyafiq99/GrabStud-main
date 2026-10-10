@@ -9,7 +9,11 @@ import {
 } from "@/lib/http";
 import { createSession } from "@/lib/auth";
 import { validDocument } from "@/lib/documents";
-import { validProfilePhoto, validVehicle } from "@/lib/profile";
+import {
+  validPassportPhoto,
+  PASSPORT_PHOTO_ERROR,
+  validVehicle,
+} from "@/lib/profile";
 import type { Role } from "@/lib/types";
 
 export async function POST(request: Request) {
@@ -64,10 +68,8 @@ export async function POST(request: Request) {
       );
     }
 
-    if (profile_photo !== null && !validProfilePhoto(profile_photo))
-      return jsonError(
-        "Choose a valid PNG, JPEG or WebP profile photo (max 300KB after processing).",
-      );
+    if (profile_photo !== null && !validPassportPhoto(profile_photo))
+      return jsonError(PASSPORT_PHOTO_ERROR);
     if (role === "driver" && !profile_photo)
       return jsonError(
         "Drivers must add a profile photo so passengers can recognise them.",
@@ -122,6 +124,7 @@ export async function POST(request: Request) {
       phone_number,
       role,
       status: "pending",
+      rejection_reason: null,
       profile_photo,
       car_colour: role === "driver" ? vehicle.car_colour : "",
       car_type: role === "driver" ? vehicle.car_type : "",

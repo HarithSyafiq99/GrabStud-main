@@ -19,7 +19,11 @@ export function DownloadButton({
     if (busy) return;
     setBusy(true);
     setError("");
-    const finish = beginLoading("Preparing your CSV download…");
+    const finish = beginLoading(
+      filename.toLowerCase().endsWith(".pdf")
+        ? "Preparing your PDF report…"
+        : "Preparing your CSV download…",
+    );
     try {
       const response = await fetch(url);
       if (!response.ok) {

@@ -44,6 +44,8 @@ export async function middleware(request: NextRequest) {
   const token = request.cookies.get("gs_session")?.value;
 
   if (pathname.startsWith("/api")) {
+    // This one endpoint authenticates Vercel's bearer secret rather than a user cookie.
+    if (pathname === "/api/cron/bookings-monthly") return NextResponse.next();
     if (PUBLIC_AUTH_APIS.includes(pathname)) {
       return NextResponse.next();
     }

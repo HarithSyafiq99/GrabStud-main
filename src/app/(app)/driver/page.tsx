@@ -29,6 +29,7 @@ export default function Driver() {
     [filters, setFilters] = useState(""),
     [available, setAvailable] = useState<BookingRecord[]>([]),
     [mine, setMine] = useState<BookingRecord[]>([]),
+    [currentBookings, setCurrentBookings] = useState<BookingRecord[]>([]),
     [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(""),
     [busyLabel, setBusyLabel] = useState(""),
@@ -40,16 +41,20 @@ export default function Driver() {
     async (background = false) => {
       const feedback = background ? "background" : "blocking";
       try {
-        const [requests, assigned] = await Promise.all([
+        const [requests, assigned, latest] = await Promise.all([
           api<{ bookings: BookingRecord[] }>("/api/bookings?" + filters, {
             feedback,
           }),
           api<{ bookings: BookingRecord[] }>("/api/bookings?mine=1", {
             feedback,
           }),
+          api<{ bookings: BookingRecord[] }>("/api/bookings?mine=1&latest=1", {
+            feedback,
+          }),
         ]);
         setAvailable(requests.bookings);
         setMine(assigned.bookings.filter((b) => b.status !== "pending"));
+        setCurrentBookings(latest.bookings.slice(0, 1));
       } catch (e) {
         setMessage((e as Error).message);
         setError(true);
@@ -300,82 +305,91 @@ export default function Driver() {
           />
         </div>
       )}
-      <div className="section-row">
-        <div>
-          <h2 className="section-title">My selected passengers</h2>
-          <p className="section-subtitle">
-            Your offers and confirmed bookings.
-          </p>
+      <section
+        className="driver-current-booking"
+        aria-labelledby="driver-current-booking-title"
+      >
+        <div className="section-row">
+          <div>
+            <h2 className="section-title" id="driver-current-booking-title">
+              Current Booking
+            </h2>
+            <p className="section-subtitle">
+              Your latest booking only. View earlier orders in History.
+            </p>
+          </div>
+          <button className="btn btn-secondary" onClick={() => load()}>
+            Refresh
+          </button>
         </div>
-        <button className="btn btn-secondary" onClick={() => load()}>
-          Refresh
-        </button>
-      </div>
-      {mine.length ? (
-        mine.map((b) => {
-          const future = new Date(b.departure_at).getTime() > Date.now(),
-            live =
-              b.ride_id == null ||
-              ["open", "full"].includes(b.ride_status ?? "");
-          return (
-            <article className="panel booking-item" key={b.id}>
-              <div className="booking-person">
-                {info(b)}
-                <PickupRemark booking={b} onUpdated={load} />
-                <BookingLocations booking={b} />
-              </div>
-              <div className="booking-actions">
-                <StatusBadge status={b.status} />
-                <p className="text-xs mt-2">
-                  RM {(Number(b.quoted_price) / 100).toFixed(2)}
-                </p>
-                {b.status === "offered" ? (
-                  <p className="text-xs muted mt-2">
-                    Waiting for the passenger to agree to your price.
-                  </p>
-                ) : null}
-                <div className="action-group flex-wrap mt-3">
-                  {b.status === "offered" && future && live ? (
-                    <button
-                      className="btn btn-secondary"
-                      disabled={!!busy}
-                      onClick={() => action(b.id, "withdraw")}
-                    >
-                      Withdraw offer
-                    </button>
-                  ) : null}
-                  {b.status === "accepted" && live ? (
-                    <>
-                      <DriverArrival booking={b} onUpdated={load} />
-                      {future ? (
-                        <button
-                          className="btn btn-secondary"
-                          disabled={!!busy}
-                          onClick={() => {
-                            setMessage("");
-                            setError(false);
-                            setCancel(b.id);
-                          }}
-                        >
-                          Cancel booking
-                        </button>
-                      ) : null}
-                    </>
-                  ) : null}
+        {loading ? (
+          <RouteLoading label="Loading your current booking…" />
+        ) : currentBookings.length ? (
+          currentBookings.map((b) => {
+            const future = new Date(b.departure_at).getTime() > Date.now(),
+              live =
+                b.ride_id == null ||
+                ["open", "full"].includes(b.ride_status ?? "");
+            return (
+              <article className="panel booking-item" key={b.id}>
+                <div className="booking-person">
+                  {info(b)}
+                  <PickupRemark booking={b} onUpdated={load} />
+                  <BookingLocations booking={b} />
                 </div>
-              </div>
-            </article>
-          );
-        })
-      ) : (
-        <div className="panel">
-          <Empty
-            title="Choose your first passenger."
-            text="Select an available request above and enter the fare you want to offer."
-            icon="car"
-          />
-        </div>
-      )}
+                <div className="booking-actions">
+                  <StatusBadge status={b.status} />
+                  <p className="text-xs mt-2">
+                    RM {(Number(b.quoted_price) / 100).toFixed(2)}
+                  </p>
+                  {b.status === "offered" ? (
+                    <p className="text-xs muted mt-2">
+                      Waiting for the passenger to agree to your price.
+                    </p>
+                  ) : null}
+                  <div className="action-group flex-wrap mt-3">
+                    {b.status === "offered" && future && live ? (
+                      <button
+                        className="btn btn-secondary"
+                        disabled={!!busy}
+                        onClick={() => action(b.id, "withdraw")}
+                      >
+                        Withdraw offer
+                      </button>
+                    ) : null}
+                    {b.status === "accepted" && live ? (
+                      <>
+                        <DriverArrival booking={b} onUpdated={load} />
+                        {future ? (
+                          <button
+                            className="btn btn-secondary"
+                            disabled={!!busy}
+                            onClick={() => {
+                              setMessage("");
+                              setError(false);
+                              setCancel(b.id);
+                            }}
+                          >
+                            Cancel booking
+                          </button>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              </article>
+            );
+          })
+        ) : (
+          <div className="panel">
+            <Empty
+              title="Choose your first passenger."
+              text="Select an available request above and enter the fare you want to offer."
+              icon="car"
+            />
+          </div>
+        )}
+      </section>
       {cancel ? (
         <div className="modal-backdrop" onClick={() => setCancel(null)}>
           <div

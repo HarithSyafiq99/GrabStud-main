@@ -1,6 +1,6 @@
 /* eslint-disable @next/next/no-img-element -- Admin document previews use private base64 images. */
 "use client";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import type { Role, UserRecord, UserStatus } from "@/lib/types";
 import { api } from "@/lib/client";
@@ -10,15 +10,18 @@ import { VehicleFields } from "./VehicleFields";
 import { Dropzone } from "./Dropzone";
 import { Icon } from "./Icon";
 import { Notice } from "./UI";
+import { useCurrentUser } from "./UserContext";
 
 export function AdminUserEditor({
   user,
   onClose,
   onSaved,
+  onRemoved,
 }: {
   user: UserRecord;
   onClose: () => void;
   onSaved: (name: string) => void | Promise<void>;
+  onRemoved: (name: string) => void | Promise<void>;
 }) {
   const [name, setName] = useState(user.name),
     [email, setEmail] = useState(user.email),
@@ -26,6 +29,9 @@ export function AdminUserEditor({
     [number, setNumber] = useState(user.student_number),
     [role, setRole] = useState<Role>(user.role),
     [status, setStatus] = useState<UserStatus>(user.status),
+    [rejectionReason, setRejectionReason] = useState(
+      user.rejection_reason ?? "",
+    ),
     [photo, setPhoto] = useState(user.profile_photo),
     [studentDoc, setStudentDoc] = useState(user.student_id_doc),
     [licenseDoc, setLicenseDoc] = useState(user.license_doc),
@@ -39,8 +45,36 @@ export function AdminUserEditor({
     [confirm, setConfirm] = useState(""),
     [showPassword, setShowPassword] = useState(false),
     [busy, setBusy] = useState(false),
+    [confirmRemoval, setConfirmRemoval] = useState(false),
     [error, setError] = useState("");
+  const currentUser = useCurrentUser();
+  const keepAccountRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (confirmRemoval) keepAccountRef.current?.focus();
+  }, [confirmRemoval]);
   const router = useRouter();
+  async function removeAccount() {
+    if (busy || currentUser.id === user.id) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api<{ name: string }>("/api/admin/users", {
+        method: "DELETE",
+        loadingLabel: "Removing account…",
+        body: JSON.stringify({
+          userId: user.id,
+          expectedUpdatedAt: user.updated_at,
+          confirm: true,
+        }),
+      });
+      await onRemoved(result.name);
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   async function save(event: FormEvent) {
     event.preventDefault();
     if (busy) return;
@@ -67,6 +101,9 @@ export function AdminUserEditor({
               student_number: number,
               role,
               status,
+              ...(status === "rejected"
+                ? { rejection_reason: rejectionReason }
+                : {}),
               profile_photo: photo,
               student_id_doc: studentDoc,
               license_doc: licenseDoc,
@@ -94,6 +131,60 @@ export function AdminUserEditor({
     }
   }
   const approvedDriver = role === "driver" && status === "approved";
+  if (confirmRemoval)
+    return (
+      <Modal
+        open
+        title="Remove this account?"
+        onClose={() => {
+          if (!busy) onClose();
+        }}
+        className="admin-user-editor"
+      >
+        <div className="admin-removal-confirm">
+          <div className="admin-removal-identity">
+            <Icon name="trash" size={24} />
+            <div>
+              <strong>{user.name}</strong>
+              <p>{user.email}</p>
+            </div>
+          </div>
+          <p>
+            This user will lose access immediately and disappear from the user
+            list. This action cannot be undone.
+          </p>
+          <p className="text-xs muted mt-3">
+            Pending requests and bookings without an arrival update will be
+            cancelled. Booking history and recorded driver earnings will be
+            kept.
+          </p>
+          <Notice message={error} error />
+          <div className="admin-editor-footer action-group">
+            <button
+              ref={keepAccountRef}
+              type="button"
+              className="btn btn-secondary"
+              disabled={busy}
+              onClick={() => {
+                setConfirmRemoval(false);
+                setError("");
+              }}
+            >
+              Keep account
+            </button>
+            <button
+              type="button"
+              className="btn btn-danger"
+              disabled={busy}
+              onClick={removeAccount}
+            >
+              <Icon name="trash" size={16} />
+              {busy ? "Removing…" : "Yes, remove account"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    );
   return (
     <Modal
       open
@@ -183,6 +274,19 @@ export function AdminUserEditor({
                 </select>
               </label>
             </div>
+            {status === "rejected" ? (
+              <label className="field mt-4">
+                Rejection reason (shown to the user)
+                <textarea
+                  className="input"
+                  required
+                  maxLength={1000}
+                  rows={3}
+                  value={rejectionReason}
+                  onChange={(event) => setRejectionReason(event.target.value)}
+                />
+              </label>
+            ) : null}
           </section>
           <section
             className="admin-editor-section"
@@ -194,7 +298,7 @@ export function AdminUserEditor({
               onChange={setPhoto}
               name={name}
               required={approvedDriver}
-              description="Choose a clear profile photo. Approved drivers must have one."
+              description="Passport-style photos only. Approved drivers must have one."
             />
             {role === "driver" ? (
               <VehicleFields
@@ -348,6 +452,31 @@ export function AdminUserEditor({
           </button>
         </div>
       </form>
+      <section
+        className="admin-remove-account"
+        aria-labelledby="admin-remove-title"
+      >
+        <div>
+          <h3 id="admin-remove-title">Remove account</h3>
+          <p>
+            {currentUser.id === user.id
+              ? "You cannot remove your own administrator account."
+              : "Remove this user’s access to GrabStudent. You will be asked to confirm."}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="btn btn-danger"
+          disabled={busy || currentUser.id === user.id}
+          onClick={() => {
+            setError("");
+            setConfirmRemoval(true);
+          }}
+        >
+          <Icon name="trash" size={16} />
+          Remove account
+        </button>
+      </section>
     </Modal>
   );
 }

@@ -3,6 +3,7 @@ import { ensureSchema, getDb, nowIso, newId } from "@/lib/db";
 import { getSession, requireApproved, requireRole } from "@/lib/auth";
 import { handleError, jsonError } from "@/lib/http";
 import { validProfilePhoto, validVehicle } from "@/lib/profile";
+import { requireActiveAccount } from "@/lib/user";
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
@@ -32,6 +33,7 @@ export async function PATCH(
       return jsonError("Invalid action.");
     const tx = await getDb().transaction("write");
     try {
+      await requireActiveAccount(tx, user);
       const result = await tx.execute({
         sql: "SELECT b.*,r.status as ride_status,r.seats_available FROM bookings b LEFT JOIN rides r ON r.id=b.ride_id WHERE b.id=?",
         args: [id],

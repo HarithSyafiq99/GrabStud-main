@@ -1,4 +1,5 @@
 "use client";
+import { BookingReports } from "@/components/BookingReports";
 import { useCallback, useEffect, useState } from "react";
 import { BookingOffer } from "@/components/BookingOffer";
 import { BookingLocations } from "@/components/BookingLocations";
@@ -71,7 +72,13 @@ export default function History() {
           </h1>
           <p>Keep track of bookings, confirmations, and good company.</p>
         </div>
-        <div className="flex gap-2 print-hide">
+        <div className="flex flex-wrap gap-2 print-hide">
+          <DownloadButton
+            url="/api/reports/bookings"
+            filename="grabstudent-bookings.pdf"
+          >
+            Download PDF
+          </DownloadButton>
           <DownloadButton
             url="/api/reports/history"
             filename="grabstudent-history.csv"
@@ -275,6 +282,7 @@ export default function History() {
           other drivers.
         </div>
       ) : null}
+      <BookingReports />
       {cancel ? (
         <div className="modal-backdrop" onClick={() => setCancel(null)}>
           <div

@@ -1,3 +1,4 @@
+import { passportPhoto } from "./photo-fixtures.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -95,6 +96,8 @@ test(
           ...process.env,
           TURSO_DATABASE_URL: url,
           AUTH_SECRET: "integration-only-32-character-secret-value",
+          CRON_SECRET: "integration-only-cron-secret-32-characters",
+          BOOKING_RETENTION_MODE: "",
           NEXT_PUBLIC_DEMO_MODE: "false",
           GRABSTUDENT_DIST_DIR: ".next-test",
           GEOCODING_BASE_URL: `http://127.0.0.1:${geocoder.address().port}`,
@@ -181,6 +184,7 @@ test(
     const doc =
       "data:image/png;base64," +
       (await readFile("public/demo/student-id.png")).toString("base64");
+    const photo = passportPhoto();
     const registration = (role, email) => ({
       name: email.split("@")[0],
       email,
@@ -190,7 +194,7 @@ test(
       role,
       student_id_doc: doc,
       license_doc: role === "driver" ? doc : null,
-      profile_photo: role === "driver" ? doc : null,
+      profile_photo: role === "driver" ? photo : null,
       ...(role === "driver"
         ? {
             car_colour: "White",
@@ -785,7 +789,7 @@ test(
         }
         const me = (await driver.request("/api/auth/me")).data.user;
         assert.equal(me.car_plate, "ABC 1234");
-        assert.equal(me.profile_photo, doc);
+        assert.equal(me.profile_photo, photo);
         assert.equal(
           (
             await driver.request("/api/auth/me", "PATCH", {
@@ -800,7 +804,7 @@ test(
           400,
         );
         assert.equal(
-          (await p1.request("/api/auth/me", "PATCH", { profile_photo: doc }))
+          (await p1.request("/api/auth/me", "PATCH", { profile_photo: photo }))
             .status,
           200,
         );
@@ -952,7 +956,7 @@ test(
           booking.arrived_at,
         );
         assert.equal(booking.car_plate, "WXY 4321");
-        assert.equal(booking.driver_photo, doc);
+        assert.equal(booking.driver_photo, photo);
         assert.ok(
           (await p1.request("/api/notifications")).data.driverArrivals >= 1,
         );
@@ -1293,6 +1297,89 @@ test(
       },
     );
     await t.test(
+      "driver latest booking returns one owned order including closed statuses without changing active lists",
+      async () => {
+        const ids = [
+          "driver-latest-old",
+          "driver-latest-a",
+          "driver-latest-z",
+          "driver-latest-other",
+          "driver-latest-unassigned",
+        ];
+        try {
+          for (const [id, assignedDriver, status, created] of [
+            [ids[0], driverId, "offered", "2098-01-01T00:00:00Z"],
+            [ids[1], driverId, "accepted", "2098-01-02T00:00:00Z"],
+            [ids[2], driverId, "cancelled", "2098-01-02T00:00:00Z"],
+            [ids[3], driver2Id, "completed", "2099-01-01T00:00:00Z"],
+            [ids[4], null, "pending", "2099-01-02T00:00:00Z"],
+          ])
+            await db.execute({
+              sql: "INSERT INTO bookings (id,passenger_id,driver_id,from_zone,to_zone,departure_at,status,payment_method,quoted_price,created_at,updated_at) VALUES (?,?,?,'Driver latest pickup','Driver latest dropoff',?,?,'cash',500,?,?)",
+              args: [
+                id,
+                p1Id,
+                assignedDriver,
+                future,
+                status,
+                created,
+                created,
+              ],
+            });
+          const latest = await driver.request("/api/bookings?mine=1&latest=1");
+          assert.equal(latest.status, 200);
+          assert.deepEqual(
+            latest.data.bookings.map((b) => b.id),
+            [ids[2]],
+          );
+          assert.equal(latest.data.bookings[0].status, "cancelled");
+          assert.deepEqual(
+            (
+              await driver2.request("/api/bookings?mine=1&latest=1")
+            ).data.bookings.map((b) => b.id),
+            [ids[3]],
+          );
+          await db.execute({
+            sql: "UPDATE bookings SET updated_at='2100-01-01T00:00:00Z' WHERE id=?",
+            args: [ids[0]],
+          });
+          await db.execute({
+            sql: "UPDATE bookings SET status='completed' WHERE id=?",
+            args: [ids[2]],
+          });
+          const completed = (
+            await driver.request("/api/bookings?mine=1&latest=1")
+          ).data.bookings;
+          assert.deepEqual(
+            completed.map((b) => b.id),
+            [ids[2]],
+          );
+          assert.equal(completed[0].status, "completed");
+          assert.deepEqual(
+            (await driver.request("/api/bookings?mine=1")).data.bookings
+              .filter((b) => ids.includes(b.id))
+              .map((b) => b.id),
+            [ids[1], ids[0]],
+          );
+          const available = (await driver.request("/api/bookings?latest=1"))
+            .data.bookings;
+          assert.ok(available.some((b) => b.id === ids[4]));
+          assert.ok(available.every((b) => b.status === "pending"));
+          assert.ok(!available.some((b) => b.id === ids[2] || b.id === ids[3]));
+          assert.equal(
+            (await stranger.request("/api/bookings?mine=1&latest=1")).status,
+            401,
+          );
+        } finally {
+          for (const id of ids)
+            await db.execute({
+              sql: "DELETE FROM bookings WHERE id=?",
+              args: [id],
+            });
+        }
+      },
+    );
+    await t.test(
       "retired rating APIs cannot alter bookings or wallet totals",
       async () => {
         const created = await request(p1, {
@@ -1608,6 +1695,7 @@ test(
             await admin.request("/api/admin/users", "PATCH", {
               userId: p1Id,
               action: "reject",
+              rejection_reason: "Please upload a clearer Student ID.",
             })
           ).status,
           200,
@@ -1636,6 +1724,238 @@ test(
         assert.equal(
           (await p1.request("/api/auth/me")).data.user.status,
           "pending",
+        );
+      },
+    );
+    await t.test(
+      "rejection reasons are mandatory, private, persisted and cleared on resubmission",
+      async () => {
+        const account = client();
+        assert.equal(
+          (
+            await account.request(
+              "/api/auth/register",
+              "POST",
+              registration("passenger", "reason-test@example.com"),
+            )
+          ).status,
+          200,
+        );
+        const user = (await account.request("/api/auth/me")).data.user;
+        const decide = (extra = {}) =>
+          admin.request("/api/admin/users", "PATCH", {
+            userId: user.id,
+            action: "reject",
+            ...extra,
+          });
+        for (const reason of [undefined, "", "   ", "x".repeat(1001), 42])
+          assert.equal(
+            (await decide({ rejection_reason: reason })).status,
+            400,
+          );
+        assert.equal(
+          (await account.request("/api/auth/me")).data.user.status,
+          "pending",
+        );
+        assert.equal(
+          (
+            await decide({
+              rejection_reason: "Please upload a clear Student ID.",
+              expectedUpdatedAt: "stale",
+            })
+          ).status,
+          409,
+        );
+        const reason =
+          "Please upload a clear Student ID.\nYour name is not readable.";
+        assert.equal(
+          (await decide({ rejection_reason: "  " + reason + "  " })).status,
+          200,
+        );
+        const rejected = (await account.request("/api/auth/me")).data.user;
+        assert.equal(rejected.status, "rejected");
+        assert.equal(rejected.rejection_reason, reason);
+        assert.equal(
+          (
+            await db.execute({
+              sql: "SELECT rejection_reason FROM users WHERE id=?",
+              args: [user.id],
+            })
+          ).rows[0].rejection_reason,
+          reason,
+        );
+        assert.notEqual(
+          (await p2.request("/api/auth/me")).data.user.rejection_reason,
+          reason,
+        );
+        const pendingPage = await fetch(base + "/pending", {
+          headers: { Cookie: account.cookie },
+        });
+        assert.ok(
+          (await pendingPage.text()).includes("Your name is not readable."),
+        );
+        assert.equal(
+          (await decide({ rejection_reason: "Changed" })).status,
+          409,
+        );
+        assert.equal(
+          (
+            await account.request("/api/auth/resubmit", "POST", {
+              student_id_doc: doc,
+            })
+          ).status,
+          200,
+        );
+        const resubmitted = (await account.request("/api/auth/me")).data.user;
+        assert.equal(resubmitted.status, "pending");
+        assert.equal(resubmitted.rejection_reason, null);
+        assert.equal(
+          (
+            await admin.request("/api/admin/users", "PATCH", {
+              userId: user.id,
+              action: "edit",
+              changes: { status: "rejected" },
+            })
+          ).status,
+          400,
+        );
+        assert.equal(
+          (
+            await admin.request("/api/admin/users", "PATCH", {
+              userId: user.id,
+              action: "edit",
+              changes: {
+                status: "rejected",
+                rejection_reason: "Use your own profile photo.",
+              },
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (
+            await account.request("/api/auth/login", "POST", {
+              email: user.email,
+              password: "TestPass123!",
+            })
+          ).data.user.rejection_reason,
+          "Use your own profile photo.",
+        );
+        assert.equal(
+          (
+            await admin.request("/api/admin/users", "PATCH", {
+              userId: user.id,
+              action: "edit",
+              changes: { status: "approved" },
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (
+            await db.execute({
+              sql: "SELECT rejection_reason FROM users WHERE id=?",
+              args: [user.id],
+            })
+          ).rows[0].rejection_reason,
+          null,
+        );
+      },
+    );
+    await t.test(
+      "passport photo constraints apply to registration, self-service and admin replacement",
+      async () => {
+        const badPhotos = [
+          passportPhoto(450, 350),
+          passportPhoto(350, 350),
+          passportPhoto(140, 180),
+          "data:image/jpeg;base64,/9j/AA==",
+          doc,
+        ];
+        for (const bad of badPhotos) {
+          assert.equal(
+            (
+              await stranger.request("/api/auth/register", "POST", {
+                ...registration("driver", "photo-format@example.com"),
+                profile_photo: bad,
+              })
+            ).status,
+            400,
+          );
+          assert.equal(
+            (await p2.request("/api/auth/me", "PATCH", { profile_photo: bad }))
+              .status,
+            400,
+          );
+          assert.equal(
+            (
+              await admin.request("/api/admin/users", "PATCH", {
+                userId: p2Id,
+                action: "edit",
+                changes: { profile_photo: bad },
+              })
+            ).status,
+            400,
+          );
+        }
+        assert.equal(
+          (
+            await p2.request("/api/auth/me", "PATCH", {
+              profile_photo: photo,
+              name: "Passenger Profile Updated",
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (await p2.request("/api/auth/me")).data.user.name,
+          "Passenger Profile Updated",
+        );
+        assert.equal(
+          (await p2.request("/api/auth/me", "PATCH", { name: "  " })).status,
+          400,
+        );
+        assert.equal(
+          (await p2.request("/api/auth/me", "PATCH", { role: "admin" })).status,
+          400,
+        );
+        assert.equal(
+          (await p2.request("/api/auth/me", "PATCH", { profile_photo: null }))
+            .status,
+          200,
+        );
+        // Legacy square photos stay usable for unrelated updates and unchanged form saves.
+        await db.execute({
+          sql: "UPDATE users SET profile_photo=? WHERE id=?",
+          args: [doc, p2Id],
+        });
+        assert.equal(
+          (
+            await p2.request("/api/auth/me", "PATCH", {
+              profile_photo: doc,
+              phone_number: "+60123456789",
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (
+            await admin.request("/api/admin/users", "PATCH", {
+              userId: p2Id,
+              action: "edit",
+              changes: { profile_photo: doc, name: "Legacy Photo" },
+            })
+          ).status,
+          200,
+        );
+        assert.equal(
+          (await p2.request("/api/auth/me", "PATCH", { profile_photo: null }))
+            .status,
+          200,
+        );
+        assert.equal(
+          (await fetch(base + "/profile", { redirect: "manual" })).status,
+          307,
         );
       },
     );
@@ -1696,7 +2016,12 @@ test(
           409,
         );
         assert.equal(
-          (await editUser("admin", { status: "rejected" })).status,
+          (
+            await editUser("admin", {
+              status: "rejected",
+              rejection_reason: "Please update your registration details.",
+            })
+          ).status,
           409,
         );
         assert.equal(
@@ -1747,7 +2072,7 @@ test(
           phone_number: "+60 123-456-789",
           student_number: "NEW-123",
           status: "approved",
-          profile_photo: doc,
+          profile_photo: photo,
           student_id_doc: doc,
           license_doc: doc,
           password: "EditedPass123!",
@@ -1762,7 +2087,7 @@ test(
         assert.equal(result.data.user.student_number, "NEW-123");
         assert.equal(result.data.user.student_id_doc, doc);
         assert.equal(result.data.user.license_doc, doc);
-        assert.equal(result.data.user.profile_photo, doc);
+        assert.equal(result.data.user.profile_photo, photo);
         assert.equal(result.data.user.id, editedId);
         assert.equal(result.data.user.created_at, before.created_at);
         assert.ok(
@@ -2001,7 +2326,15 @@ test(
           (await otherAdmin.request("/api/admin/users?tab=all")).status,
           200,
         );
-        assert.equal((await editUser(id, { status: "rejected" })).status, 200);
+        assert.equal(
+          (
+            await editUser(id, {
+              status: "rejected",
+              rejection_reason: "Please update your registration details.",
+            })
+          ).status,
+          200,
+        );
         assert.equal(
           (
             await otherAdmin.request("/api/auth/login", "POST", {
@@ -2019,7 +2352,12 @@ test(
         ])
           assert.equal((await otherAdmin.request(path)).status, 403);
         assert.equal(
-          (await editUser("admin", { status: "rejected" })).status,
+          (
+            await editUser("admin", {
+              status: "rejected",
+              rejection_reason: "Please update your registration details.",
+            })
+          ).status,
           409,
         );
         const oldAdmin = client();
@@ -2064,6 +2402,387 @@ test(
         );
       },
     );
+    const removeUser = (account, userId, expectedUpdatedAt, extra = {}) =>
+      account.request("/api/admin/users", "DELETE", {
+        userId,
+        expectedUpdatedAt,
+        confirm: true,
+        ...extra,
+      });
+    await t.test(
+      "account removal requires admin access, confirmation and a current version",
+      async () => {
+        const version = (
+          await db.execute("SELECT updated_at FROM users WHERE id='admin'")
+        ).rows[0].updated_at;
+        for (const account of [stranger, driver, p2])
+          assert.equal(
+            (await removeUser(account, "admin", version)).status,
+            account === stranger ? 401 : 403,
+          );
+        assert.equal((await removeUser(admin, "admin", version)).status, 409);
+        assert.equal((await removeUser(admin, p2Id, undefined)).status, 400);
+        assert.equal(
+          (await removeUser(admin, p2Id, "stale", { confirm: false })).status,
+          400,
+        );
+        assert.equal((await removeUser(admin, p2Id, "stale")).status, 409);
+        assert.equal(
+          (await removeUser(admin, "missing-account", version)).status,
+          404,
+        );
+        assert.equal(
+          (await admin.request("/api/admin/users", "DELETE", [])).status,
+          400,
+        );
+        assert.equal(
+          (
+            await db.execute(
+              "SELECT COUNT(*) AS count FROM users WHERE deleted_at IS NOT NULL",
+            )
+          ).rows[0].count,
+          0,
+        );
+      },
+    );
+    await t.test(
+      "removing a passenger cancels uncollected requests, preserves income and revokes all access",
+      async () => {
+        const account = client(),
+          email = "remove-passenger@example.com";
+        assert.equal(
+          (
+            await account.request(
+              "/api/auth/register",
+              "POST",
+              registration("passenger", email),
+            )
+          ).status,
+          200,
+        );
+        const id = (await account.request("/api/auth/me")).data.user.id;
+        assert.equal(
+          (
+            await admin.request("/api/admin/users", "PATCH", {
+              userId: id,
+              action: "approve",
+            })
+          ).status,
+          200,
+        );
+        await account.request("/api/auth/login", "POST", {
+          email,
+          password: "TestPass123!",
+        });
+        const fixtureTime = new Date(Date.now() - 60000).toISOString();
+        await db.execute({
+          sql: "INSERT INTO rides (id,driver_id,from_zone,to_zone,departure_at,seats_total,seats_available,flat_rate,status,created_at) VALUES ('removal-seat',?,'Campus','Station',?,2,1,5,'open',?)",
+          args: [driverId, future, fixtureTime],
+        });
+        for (const [suffix, status, arrived] of [
+          ["pending", "pending", null],
+          ["offered", "offered", null],
+          ["accepted", "accepted", null],
+          ["arrived", "accepted", fixtureTime],
+          ["completed", "completed", fixtureTime],
+        ])
+          await db.execute({
+            sql: "INSERT INTO bookings (id,ride_id,driver_id,passenger_id,from_zone,to_zone,departure_at,status,quoted_price,payment_method,arrived_at,created_at,updated_at) VALUES (?,?,?,?, 'Campus','Station',?,?,500,'cash',?,?,?)",
+            args: [
+              "removal-" + suffix,
+              suffix === "accepted" ? "removal-seat" : null,
+              driverId,
+              id,
+              future,
+              status,
+              arrived,
+              fixtureTime,
+              fixtureTime,
+            ],
+          });
+        const walletBefore = (await driver.request("/api/wallet")).data;
+        const countsBefore = (await admin.request("/api/admin/overview")).data
+          .counts;
+        const before = (
+          await db.execute({
+            sql: "SELECT * FROM users WHERE id=?",
+            args: [id],
+          })
+        ).rows[0];
+        const outcomes = await Promise.all([
+          removeUser(admin, id, before.updated_at),
+          removeUser(admin, id, before.updated_at),
+        ]);
+        assert.deepEqual(outcomes.map((r) => r.status).sort(), [200, 404]);
+        const after = (
+          await db.execute({
+            sql: "SELECT * FROM users WHERE id=?",
+            args: [id],
+          })
+        ).rows[0];
+        assert.ok(after.deleted_at);
+        assert.equal(
+          Number(after.session_version),
+          Number(before.session_version) + 1,
+        );
+        assert.notEqual(after.email, email);
+        assert.equal(after.password_hash, "");
+        const bookings = (
+          await db.execute(
+            "SELECT id,status FROM bookings WHERE id LIKE 'removal-%' ORDER BY id",
+          )
+        ).rows;
+        assert.equal(bookings.length, 5);
+        for (const b of bookings)
+          assert.equal(
+            b.status,
+            b.id === "removal-arrived"
+              ? "accepted"
+              : b.id === "removal-completed"
+                ? "completed"
+                : "cancelled",
+          );
+        assert.equal(
+          (
+            await db.execute(
+              "SELECT seats_available FROM rides WHERE id='removal-seat'",
+            )
+          ).rows[0].seats_available,
+          2,
+        );
+        const walletAfter = (await driver.request("/api/wallet")).data;
+        assert.deepEqual(walletAfter.periods, walletBefore.periods);
+        assert.deepEqual(walletAfter.recent, walletBefore.recent);
+        for (const tab of ["all", "pending", "approved", "rejected"])
+          assert.ok(
+            !(
+              await admin.request("/api/admin/users?tab=" + tab)
+            ).data.users.some((u) => u.id === id),
+          );
+        const countsAfter = (await admin.request("/api/admin/overview")).data
+          .counts;
+        assert.equal(countsAfter.all, countsBefore.all - 1);
+        assert.equal(countsAfter.approved, countsBefore.approved - 1);
+        assert.equal(
+          (
+            await db.execute({
+              sql: "SELECT COUNT(*) AS count FROM audit_logs WHERE action='REMOVE_USER' AND details=?",
+              args: [`Removed account ${id}`],
+            })
+          ).rows[0].count,
+          1,
+        );
+        for (const path of ["/api/auth/me", "/api/bookings", "/api/history"])
+          assert.equal((await account.request(path)).status, 401);
+        assert.equal((await request(account)).status, 401);
+        assert.equal(
+          (
+            await account.request("/api/auth/me", "PATCH", {
+              phone_number: "+60123456789",
+            })
+          ).status,
+          401,
+        );
+        assert.equal(
+          (
+            await account.request("/api/auth/resubmit", "POST", {
+              student_id_doc: doc,
+            })
+          ).status,
+          401,
+        );
+        assert.equal(
+          (
+            await account.request("/api/auth/login", "POST", {
+              email,
+              password: "TestPass123!",
+            })
+          ).status,
+          401,
+        );
+        assert.equal((await editUser(id, { name: "Restored" })).status, 404);
+        for (const action of ["approve", "reject"])
+          assert.equal(
+            (
+              await admin.request("/api/admin/users", "PATCH", {
+                userId: id,
+                action,
+                rejection_reason: "Please update your registration details.",
+              })
+            ).status,
+            404,
+          );
+        const replacement = client();
+        assert.equal(
+          (
+            await replacement.request(
+              "/api/auth/register",
+              "POST",
+              registration("passenger", email),
+            )
+          ).status,
+          200,
+        );
+        assert.notEqual(
+          (await replacement.request("/api/auth/me")).data.user.id,
+          id,
+        );
+        assert.equal((await account.request("/api/auth/me")).status, 401);
+      },
+    );
+    await t.test(
+      "driver and administrator removal preserve records and recheck administrator access",
+      async () => {
+        const account = client();
+        await account.request(
+          "/api/auth/register",
+          "POST",
+          registration("driver", "remove-driver@example.com"),
+        );
+        const id = (await account.request("/api/auth/me")).data.user.id;
+        await admin.request("/api/admin/users", "PATCH", {
+          userId: id,
+          action: "approve",
+        });
+        await account.request("/api/auth/login", "POST", {
+          email: "remove-driver@example.com",
+          password: "TestPass123!",
+        });
+        const time = new Date().toISOString();
+        await db.execute({
+          sql: "INSERT INTO rides (id,driver_id,from_zone,to_zone,departure_at,seats_total,seats_available,flat_rate,status,created_at) VALUES ('removed-driver-ride',?,'Campus','Station',?,2,2,5,'open',?)",
+          args: [id, future, time],
+        });
+        for (const [suffix, status, arrived] of [
+          ["offer", "offered", null],
+          ["earned", "completed", time],
+        ])
+          await db.execute({
+            sql: "INSERT INTO bookings (id,driver_id,passenger_id,from_zone,to_zone,departure_at,status,quoted_price,payment_method,arrived_at,created_at,updated_at) VALUES (?, ?, ?, 'Campus','Station',?,?,750,'cash',?,?,?)",
+            args: [
+              "removed-driver-" + suffix,
+              id,
+              p2Id,
+              future,
+              status,
+              arrived,
+              time,
+              time,
+            ],
+          });
+        const version = (
+          await db.execute({
+            sql: "SELECT updated_at FROM users WHERE id=?",
+            args: [id],
+          })
+        ).rows[0].updated_at;
+        assert.equal((await removeUser(admin, id, version)).status, 200);
+        assert.equal(
+          (
+            await db.execute(
+              "SELECT status FROM rides WHERE id='removed-driver-ride'",
+            )
+          ).rows[0].status,
+          "cancelled",
+        );
+        assert.equal(
+          (
+            await db.execute(
+              "SELECT status FROM bookings WHERE id='removed-driver-offer'",
+            )
+          ).rows[0].status,
+          "cancelled",
+        );
+        assert.equal(
+          (
+            await db.execute(
+              "SELECT status,quoted_price FROM bookings WHERE id='removed-driver-earned'",
+            )
+          ).rows[0].quoted_price,
+          750,
+        );
+        assert.equal((await account.request("/api/wallet")).status, 401);
+        assert.equal(
+          (await patch(account, "removed-driver-offer", "withdraw")).status,
+          401,
+        );
+        // A removed administrator cannot perform an action that waited behind removal.
+        const { removeAdminUser } = await import("../src/lib/admin-users.ts");
+        const { requireActiveAccount } = await import("../src/lib/user.ts");
+        const { initializeSchema } = await import("../src/lib/migrations.ts");
+        assert.equal((await editUser(id, { role: "admin" })).status, 404);
+        await assert.rejects(
+          removeAdminUser(db, id, p2Id, time),
+          (e) => e.status === 403,
+        );
+        await assert.rejects(
+          requireActiveAccount(db, {
+            id,
+            role: "driver",
+            status: "approved",
+            session_version: 0,
+          }),
+          (e) => e.status === 401,
+        );
+        await initializeSchema(db);
+        assert.ok(
+          (
+            await db.execute({
+              sql: "SELECT deleted_at FROM users WHERE id=?",
+              args: [id],
+            })
+          ).rows[0].deleted_at,
+        );
+        // Create and remove a second approved administrator without losing the last one.
+        const second = client();
+        await second.request(
+          "/api/auth/register",
+          "POST",
+          registration("passenger", "removable-admin@example.com"),
+        );
+        const secondId = (await second.request("/api/auth/me")).data.user.id;
+        assert.equal(
+          (await editUser(secondId, { role: "admin", status: "approved" }))
+            .status,
+          200,
+        );
+        await second.request("/api/auth/login", "POST", {
+          email: "removable-admin@example.com",
+          password: "TestPass123!",
+        });
+        const secondVersion = (
+          await db.execute({
+            sql: "SELECT updated_at FROM users WHERE id=?",
+            args: [secondId],
+          })
+        ).rows[0].updated_at;
+        assert.equal(
+          (await removeUser(second, secondId, secondVersion)).status,
+          409,
+        );
+        assert.equal(
+          (await removeUser(admin, secondId, secondVersion)).status,
+          200,
+        );
+        assert.equal(
+          (await second.request("/api/admin/users?tab=all")).status,
+          401,
+        );
+        assert.equal(
+          (
+            await editUser("admin", {
+              status: "rejected",
+              rejection_reason: "Please update your registration details.",
+            })
+          ).status,
+          409,
+        );
+        assert.equal(
+          (await db.execute("PRAGMA foreign_key_check")).rows.length,
+          0,
+        );
+      },
+    );
     await t.test(
       "password recovery is removed and normal sign-in remains available",
       async () => {
@@ -2103,6 +2822,237 @@ test(
           200,
         );
         assert.equal((await p2.request("/api/auth/me")).status, 200);
+      },
+    );
+    await t.test(
+      "PDF downloads contain only the signed-in account's bookings and monthly archives are private",
+      async () => {
+        const {
+          PDFDocument,
+          PDFName,
+          PDFDict,
+          PDFArray,
+          PDFRawStream,
+          decodePDFRawStream,
+        } = await import("pdf-lib");
+        const { createBookingPdf } = await import(
+          "../src/lib/booking-reports.ts"
+        );
+        const parseRecords = async (bytes) => {
+          const pdf = await PDFDocument.load(bytes);
+          const names = pdf.catalog
+            .lookup(PDFName.of("Names"), PDFDict)
+            .lookup(PDFName.of("EmbeddedFiles"), PDFDict)
+            .lookup(PDFName.of("Names"), PDFArray);
+          const stream = names
+            .lookup(1, PDFDict)
+            .lookup(PDFName.of("EF"), PDFDict)
+            .lookup(PDFName.of("F"), PDFRawStream);
+          return JSON.parse(
+            new TextDecoder().decode(decodePDFRawStream(stream).decode()),
+          );
+        };
+        assert.equal(
+          (await stranger.request("/api/reports/bookings")).status,
+          401,
+        );
+        assert.equal((await p1.request("/api/reports/bookings")).status, 403);
+        assert.equal(
+          (
+            await admin.request("/api/admin/users", "PATCH", {
+              userId: p1Id,
+              action: "approve",
+            })
+          ).status,
+          200,
+        );
+        for (const [account, id, role] of [
+          [p1, p1Id, "passenger"],
+          [p2, p2Id, "passenger"],
+          [driver, driverId, "driver"],
+          [admin, "admin", "admin"],
+        ]) {
+          const response = await fetch(base + "/api/reports/bookings", {
+            headers: { Cookie: account.cookie },
+          });
+          assert.equal(response.status, 200);
+          assert.equal(response.headers.get("content-type"), "application/pdf");
+          assert.ok(
+            response.headers.get("content-disposition").includes(role + ".pdf"),
+          );
+          const records = await parseRecords(
+            new Uint8Array(await response.arrayBuffer()),
+          );
+          const where =
+            role === "admin"
+              ? ""
+              : ` WHERE ${role === "driver" ? "driver_id" : "passenger_id"}=?`;
+          const owned = (
+            await db.execute({
+              sql:
+                "SELECT id FROM bookings" +
+                where +
+                " ORDER BY created_at DESC,id DESC",
+              args: role === "admin" ? [] : [id],
+            })
+          ).rows;
+          assert.deepEqual(
+            records.bookings.map((b) => b.id),
+            owned.map((b) => b.id),
+          );
+          assert.equal(records.role, role);
+          assert.ok(
+            records.bookings.every(
+              (b) =>
+                !("password_hash" in b) &&
+                !("student_id_doc" in b) &&
+                !("profile_photo" in b),
+            ),
+          );
+        }
+        for (const [id, role] of [
+          [p1Id, "passenger"],
+          [p2Id, "passenger"],
+          [driverId, "driver"],
+          [null, "admin"],
+        ]) {
+          const pdf = await createBookingPdf([], {
+            name: "Fixture report",
+            role,
+            month: "2026-01",
+            archived: true,
+          });
+          await db.execute({
+            sql: "INSERT INTO monthly_booking_reports (id,owner_id,audience_role,month,booking_count,pdf_data,created_at) VALUES (?,?,?,'2026-01',1,?,?)",
+            args: ["pdf-" + (id ?? "global"), id, role, Buffer.from(pdf), now],
+          });
+        }
+        assert.equal(
+          (await stranger.request("/api/reports/monthly")).status,
+          401,
+        );
+        for (const account of [p1, p2, driver, admin]) {
+          const result = await account.request("/api/reports/monthly");
+          assert.equal(result.status, 200);
+          assert.equal(result.data.reports.length, 1);
+          assert.equal(result.data.reports[0].booking_count, 1);
+        }
+        assert.equal(
+          (
+            await p2.request(
+              "/api/reports/monthly?month=2026-01&role=driver&userId=" +
+                driverId,
+            )
+          ).status,
+          404,
+        );
+        assert.equal(
+          (await p2.request("/api/reports/monthly?month=2026-01&role=admin"))
+            .status,
+          404,
+        );
+        assert.equal(
+          (
+            await p2.request(
+              "/api/reports/monthly?month=2026-13&role=passenger",
+            )
+          ).status,
+          400,
+        );
+        for (const [account, role] of [
+          [p2, "passenger"],
+          [driver, "driver"],
+          [admin, "admin"],
+        ]) {
+          const response = await fetch(
+            base + `/api/reports/monthly?month=2026-01&role=${role}`,
+            { headers: { Cookie: account.cookie } },
+          );
+          assert.equal(response.status, 200);
+          assert.equal(
+            (
+              await PDFDocument.load(
+                new Uint8Array(await response.arrayBuffer()),
+              )
+            ).getPageCount(),
+            1,
+          );
+        }
+        const newer = await createBookingPdf([], {
+          name: "Newest monthly part",
+          role: "passenger",
+          month: "2026-01",
+          archived: true,
+        });
+        await db.execute({
+          sql: "INSERT INTO monthly_booking_reports (id,owner_id,audience_role,month,booking_count,pdf_data,created_at,latest_booking_at,latest_booking_id) VALUES ('newer-pdf',?,'passenger','2026-01',2,?,?,'2026-01-20','newer-booking')",
+          args: [p2Id, Buffer.from(newer), now],
+        });
+        const combinedResponse = await fetch(
+          base + "/api/reports/monthly?month=2026-01&role=passenger",
+          { headers: { Cookie: p2.cookie } },
+        );
+        assert.equal(combinedResponse.status, 200);
+        const combined = await PDFDocument.load(
+          new Uint8Array(await combinedResponse.arrayBuffer()),
+        );
+        assert.equal(combined.getPageCount(), 3); // summary cover followed by two original snapshots
+        const files = combined.catalog
+          .lookup(PDFName.of("Names"), PDFDict)
+          .lookup(PDFName.of("EmbeddedFiles"), PDFDict)
+          .lookup(PDFName.of("Names"), PDFArray);
+        assert.equal(files.size(), 4);
+        const firstPart = files
+          .lookup(1, PDFDict)
+          .lookup(PDFName.of("EF"), PDFDict)
+          .lookup(PDFName.of("F"), PDFRawStream);
+        assert.equal(
+          (await parseRecords(decodePDFRawStream(firstPart).decode())).account,
+          "Newest monthly part",
+        );
+        assert.equal(
+          (await p2.request("/api/reports/monthly")).data.reports[0]
+            .booking_count,
+          3,
+        );
+      },
+    );
+    await t.test(
+      "monthly cron requires its bearer secret and remains disabled until retention is configured",
+      async () => {
+        const before = (await db.execute("SELECT COUNT(*) AS n FROM bookings"))
+          .rows[0].n;
+        assert.equal(
+          (await stranger.request("/api/cron/bookings-monthly")).status,
+          401,
+        );
+        assert.equal(
+          (await admin.request("/api/cron/bookings-monthly")).status,
+          401,
+        );
+        assert.equal(
+          (
+            await fetch(base + "/api/cron/bookings-monthly", {
+              headers: { Authorization: "Bearer wrong" },
+            })
+          ).status,
+          401,
+        );
+        assert.equal(
+          (
+            await fetch(base + "/api/cron/bookings-monthly", {
+              headers: {
+                Authorization:
+                  "Bearer integration-only-cron-secret-32-characters",
+              },
+            })
+          ).status,
+          503,
+        );
+        assert.equal(
+          (await db.execute("SELECT COUNT(*) AS n FROM bookings")).rows[0].n,
+          before,
+        );
       },
     );
   },

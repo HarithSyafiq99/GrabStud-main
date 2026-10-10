@@ -5,6 +5,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Icon } from "@/components/Icon";
 import { Avatar } from "@/components/Avatar";
 import { AdminUserEditor } from "@/components/AdminUserEditor";
+import { Modal } from "@/components/Modal";
 import { ActionButton, ACTION_SUCCESS_MS } from "@/components/ActionButton";
 import { BookingProgress } from "@/components/BookingProgress";
 import { RouteLoading } from "@/components/RouteLoading";
@@ -14,6 +15,9 @@ import type { UserRecord } from "@/lib/types";
 export default function Admin() {
   const [tab, setTab] = useState("all"),
     [editing, setEditing] = useState<UserRecord | null>(null),
+    [rejecting, setRejecting] = useState<UserRecord | null>(null),
+    [reason, setReason] = useState(""),
+    [reviewError, setReviewError] = useState(""),
     [users, setUsers] = useState<UserRecord[]>([]),
     [counts, setCounts] = useState<Record<string, number>>({}),
     [query, setQuery] = useState(""),
@@ -62,7 +66,12 @@ export default function Admin() {
     try {
       await api("/api/admin/users", {
         method: "PATCH",
-        body: JSON.stringify({ userId, action }),
+        body: JSON.stringify({
+          userId,
+          action,
+          expectedUpdatedAt: users.find((u) => u.id === userId)?.updated_at,
+          ...(action === "reject" ? { rejection_reason: reason.trim() } : {}),
+        }),
       });
       setMessage(
         action === "approve"
@@ -70,12 +79,14 @@ export default function Admin() {
           : "Application declined. The student can submit updated documents.",
       );
       setError(false);
+      if (action === "reject") setRejecting(null);
       if (action === "approve") {
         setSuccessful(userId);
         await new Promise((resolve) => setTimeout(resolve, ACTION_SUCCESS_MS));
       }
       await load();
     } catch (e) {
+      if (action === "reject") setReviewError((e as Error).message);
       setMessage((e as Error).message);
       setError(true);
     } finally {
@@ -263,7 +274,11 @@ export default function Admin() {
                           <button
                             className="btn btn-secondary"
                             disabled={!!busy}
-                            onClick={() => act(u.id, "reject")}
+                            onClick={() => {
+                              setRejecting(u);
+                              setReason("");
+                              setReviewError("");
+                            }}
                           >
                             {busy === u.id && busyAction === "reject"
                               ? "Declining…"
@@ -289,19 +304,80 @@ export default function Admin() {
       </div>
       <p className="text-[10px] muted mt-4">
         Drivers require both a Student ID and a driving license. Review each
-        document before approving.
+        document and check that profile photos show a clear, centred face against
+        a plain light background before approving.
       </p>
       {editing ? (
         <AdminUserEditor
           key={editing.id}
           user={editing}
           onClose={() => setEditing(null)}
+          onRemoved={async (name) => {
+            setEditing(null);
+            setMessage(`${name}’s account was removed.`);
+            setError(false);
+            await load();
+          }}
           onSaved={async (name) => {
             setMessage(`${name}’s account was updated.`);
             setError(false);
             await load();
           }}
         />
+      ) : null}
+      {rejecting ? (
+        <Modal
+          open
+          title="Decline application"
+          onClose={() => {
+            if (!busy) setRejecting(null);
+          }}
+        >
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (reason.trim()) void act(rejecting.id, "reject");
+            }}
+          >
+            <p className="text-sm muted mb-4">
+              Explain what {rejecting.name} needs to correct. This message will
+              appear on their registration status screen.
+            </p>
+            <label className="field">
+              Rejection reason
+              <textarea
+                className="input"
+                required
+                maxLength={1000}
+                rows={4}
+                value={reason}
+                disabled={!!busy}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="e.g. Your Student ID is blurred. Upload a clear photo with your name and student number visible."
+              />
+            </label>
+            <p className="text-xs muted mt-2">
+              {reason.length}/1000 characters
+            </p>
+            <Notice message={reviewError} error />
+            <div className="action-group mt-4">
+              <button
+                className="btn btn-danger"
+                disabled={!!busy || !reason.trim()}
+              >
+                {busy ? "Declining…" : "Decline & notify user"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={!!busy}
+                onClick={() => setRejecting(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Modal>
       ) : null}
       {preview ? (
         <div className="modal-backdrop" onClick={() => setPreview(null)}>
