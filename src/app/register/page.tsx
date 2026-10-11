@@ -100,6 +100,11 @@ export default function RegisterPage() {
               onChange={setPhoto}
               required={role === "driver"}
               name={name}
+              description={
+                role === "passenger"
+                  ? "Profile photos are optional for passengers. You can sign up without uploading a photo."
+                  : "A passport-style profile photo is required for drivers so passengers can recognise you."
+              }
             />
           </div>
           <label className="field">

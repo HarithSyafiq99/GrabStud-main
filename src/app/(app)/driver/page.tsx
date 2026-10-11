@@ -27,6 +27,7 @@ export default function Driver() {
     [to, setTo] = useState(""),
     [date, setDate] = useState(""),
     [filters, setFilters] = useState(""),
+    [filtersOpen, setFiltersOpen] = useState(false),
     [available, setAvailable] = useState<BookingRecord[]>([]),
     [mine, setMine] = useState<BookingRecord[]>([]),
     [currentBookings, setCurrentBookings] = useState<BookingRecord[]>([]),
@@ -207,48 +208,6 @@ export default function Driver() {
         ]}
       />
       <Notice message={message} error={error} />
-      <form className="panel filter-panel" onSubmit={filter}>
-        <label className="field">
-          PICK-UP
-          <input
-            className="input"
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-            placeholder="Any pickup or place name"
-            list="driver-location-suggestions"
-            maxLength={160}
-          />
-        </label>
-        <label className="field">
-          DESTINATION
-          <input
-            className="input"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            placeholder="Any destination or place name"
-            list="driver-location-suggestions"
-            maxLength={160}
-          />
-        </label>
-        <label className="field">
-          DEPARTURE DATE
-          <input
-            className="input"
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-          />
-        </label>
-        <button className="btn btn-primary">
-          <Icon name="search" size={16} />
-          Find passengers
-        </button>
-      </form>
-      <datalist id="driver-location-suggestions">
-        {ZONES.map((zone) => (
-          <option key={zone} value={zone} />
-        ))}
-      </datalist>
       <div className="section-row">
         <div>
           <h2 className="section-title">Available passenger requests</h2>
@@ -257,18 +216,77 @@ export default function Driver() {
             reviewing your fare.
           </p>
         </div>
-        <button
-          className="text-xs text-lilac-deep"
-          onClick={() => {
-            setFrom("");
-            setTo("");
-            setDate("");
-            if (filters) setFilters("");
-            else load();
-          }}
-        >
-          Reset filters
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {filters ? (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => {
+                setFrom("");
+                setTo("");
+                setDate("");
+                setFilters("");
+              }}
+            >
+              Reset filters
+            </button>
+          ) : null}
+          <button
+            type="button"
+            id="driver-filter-toggle"
+            className={`btn ${filtersOpen || filters ? "btn-primary" : "btn-secondary"}`}
+            aria-expanded={filtersOpen}
+            aria-controls="driver-request-filters"
+            onClick={() => setFiltersOpen((open) => !open)}
+          >
+            <Icon name="filter" size={16} />
+            {filtersOpen ? "Hide filters" : "Filter"}
+          </button>
+        </div>
+      </div>
+      <div id="driver-request-filters" className="mb-5" hidden={!filtersOpen}>
+        <form className="panel filter-panel" onSubmit={filter}>
+          <label className="field">
+            PICK-UP
+            <input
+              className="input"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              placeholder="Any pickup or place name"
+              list="driver-location-suggestions"
+              maxLength={160}
+            />
+          </label>
+          <label className="field">
+            DESTINATION
+            <input
+              className="input"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              placeholder="Any destination or place name"
+              list="driver-location-suggestions"
+              maxLength={160}
+            />
+          </label>
+          <label className="field">
+            DEPARTURE DATE
+            <input
+              className="input"
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
+          </label>
+          <button className="btn btn-primary">
+            <Icon name="search" size={16} />
+            Find passengers
+          </button>
+        </form>
+        <datalist id="driver-location-suggestions">
+          {ZONES.map((zone) => (
+            <option key={zone} value={zone} />
+          ))}
+        </datalist>
       </div>
       {loading ? (
         <RouteLoading label="Loading passenger requests…" />

@@ -893,6 +893,32 @@ try {
     ),
     "drivers see the newest available request first",
   );
+  check(
+    await evaluate(
+      "!document.querySelector('.filter-panel').getClientRects().length && document.querySelector('#driver-filter-toggle').getAttribute('aria-expanded')==='false' && document.querySelector('#driver-filter-toggle').textContent.includes('Filter')",
+    ),
+    "available-request filters are hidden by default behind the Filter button",
+  );
+  await click("#driver-filter-toggle");
+  await until(
+    "document.querySelector('.filter-panel').getClientRects().length && document.querySelector('#driver-filter-toggle').getAttribute('aria-expanded')==='true'",
+    "driver request filters expanded",
+  );
+  for (const width of [320, 390, 1280]) {
+    await send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: width < 768,
+    });
+    await delay(200);
+    check(
+      await evaluate(
+        "document.documentElement.scrollWidth<=innerWidth+1 && [...document.querySelectorAll('#driver-filter-toggle,.filter-panel input,.filter-panel button')].every(e=>{const r=e.getBoundingClientRect();return r.height>=44 && r.left>=0 && r.right<=innerWidth+1;})",
+      ),
+      `driver filter button and expanded fields fit ${width}px`,
+    );
+  }
   await setInput(".filter-panel label:nth-child(2) input", "Sort destination");
   await click(".filter-panel > button");
   await until(
@@ -904,6 +930,20 @@ try {
       "document.querySelector('.booking-info').textContent.includes('Newest pickup') && !!document.querySelector('.driver-arrival button')",
     ),
     "driver filters retain newest-first order and booked pickup actions",
+  );
+  await click("#driver-filter-toggle");
+  check(
+    await evaluate(
+      "!document.querySelector('.filter-panel').getClientRects().length && document.querySelector('#driver-filter-toggle').getAttribute('aria-expanded')==='false' && document.querySelectorAll('.fare-offer').length===2",
+    ),
+    "hiding the filters keeps the filtered requests visible",
+  );
+  await click("#driver-filter-toggle");
+  check(
+    await evaluate(
+      "document.querySelector('.filter-panel label:nth-child(2) input').value==='Sort destination' && document.querySelector('.filter-panel').getClientRects().length>0",
+    ),
+    "reopening the filters preserves the driver's selected destination",
   );
 
   await click(".driver-arrival button");
