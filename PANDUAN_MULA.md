@@ -35,15 +35,15 @@ Akaun demo hanya untuk percubaan tempatan. Untuk sistem kosong, jalankan `npm ru
 ## 5. Cuba aliran lengkap
 
 1. Daftar pengguna baharu melalui **Join the community**.
-2. Pilih Passenger atau Driver. Masukkan nombor telefon dan alamat email biasa. Muat naik ID pelajar; Driver perlu lesen sekali. Gunakan PNG/JPEG/WebP/PDF, maksimum 1.5MB setiap fail.
-3. Akaun berada dalam status pending.
-4. Log masuk sebagai admin dalam browser lain/incognito. Buka dokumen, kemudian **Approve** atau **Decline**.
-5. Pengguna yang diluluskan akan boleh masuk dashboard. Halaman pending menyemak status secara automatik.
+2. Pilih Passenger atau Driver. Masukkan nombor telefon dan alamat email biasa. Muat naik ID pelajar; Driver perlu lesen, gambar profil gaya pasport dan maklumat kereta sekali. Gambar profil Passenger adalah pilihan. Dokumen menerima PNG/JPEG/WebP/PDF, maksimum 1.5MB setiap fail.
+3. Passenger boleh masuk dashboard dan membuat tempahan terus selepas mendaftar tanpa kelulusan admin. Akaun Driver berada dalam status pending.
+4. Untuk Driver, log masuk sebagai admin dalam browser lain/incognito. Buka dokumen, kemudian **Approve** atau **Decline** dengan sebab penolakan.
+5. Driver yang diluluskan boleh masuk dashboard. Halaman pending menyemak status secara automatik.
 6. Penumpang pilih lokasi **PICK-UP**, **DESTINATION**, tarikh/masa dan bayaran tunai atau QR. Klik **Post booking request**.
-7. Pemandu buka Driver hub, tapis destinasi melalui **Find passengers**, kemudian pilih penumpang yang mahu diambil.
+7. Pemandu buka Driver hub, klik **Filter** untuk membuka pilihan penapis, tapis destinasi melalui **Find passengers**, kemudian pilih penumpang yang mahu diambil.
 8. Pemandu isi **Your price (RM)** dan klik **Choose passenger & send price**. Penumpang klik **Agree & book** jika setuju atau **Decline price** jika tidak setuju. Status menjadi **Booked** hanya selepas penumpang bersetuju. Jika harga ditolak, permintaan dibuka semula kepada pemandu lain.
 9. Bayaran tunai atau QR dibuat terus kepada pemandu. Sistem ini tidak memproses bayaran online.
-10. Pemandu klik **Complete journey** selepas waktu berlepas atau **Cancel booking** sebelum waktu berlepas. Penumpang boleh klik **Cancel request** untuk membatalkan permintaan atau tempahan.
+10. Pemandu klik **I've arrived** apabila sampai di lokasi pengambilan untuk menghantar notis kepada penumpang dan merekodkan tambang dalam Wallet, atau **Cancel booking** sebelum waktu berlepas. Penumpang boleh membatalkan permintaan atau tempahan melalui Current Booking.
 
 Semua masa dipaparkan mengikut Malaysia. Animasi turut menghormati tetapan reduced motion.
 

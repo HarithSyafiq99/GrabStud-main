@@ -40,7 +40,7 @@ export default function RegisterPage() {
     setBusy(true);
     setError("");
     try {
-      await api("/api/auth/register", {
+      const result = await api<{ redirect: string }>("/api/auth/register", {
         method: "POST",
         body: JSON.stringify({
           role,
@@ -56,7 +56,7 @@ export default function RegisterPage() {
         }),
       });
       startNavigation(() => {
-        router.push("/pending");
+        router.push(result.redirect);
         router.refresh();
       });
     } catch (e) {
@@ -78,7 +78,7 @@ export default function RegisterPage() {
           <span className="eyebrow">ONE CAMPUS. MORE POSSIBILITIES.</span>
           <h2>Find your people.</h2>
           <p className="muted text-xs mb-6">
-            Create an account. Get verified. Share the journey.
+            Create an account. Share the journey.
           </p>
           <div className="role-tabs">
             {(["passenger", "driver"] as const).map((r) => (
@@ -94,6 +94,11 @@ export default function RegisterPage() {
               </button>
             ))}
           </div>
+          <p className="text-xs muted leading-5 mt-3" aria-live="polite">
+            {role === "passenger"
+              ? "Passengers can start booking immediately after signup. No admin approval is needed."
+              : "Drivers need admin approval before choosing passengers and offering fares."}
+          </p>
           <div className="my-4">
             <ProfilePhotoPicker
               value={photo}
@@ -191,8 +196,8 @@ export default function RegisterPage() {
             ) : null}
           </div>
           <p className="text-[10px] muted mt-3 leading-5">
-            Your documents are only shown to platform administrators for
-            verification.
+            Your documents are private and only shown to platform
+            administrators.
           </p>
           <Notice message={error} error />
           <button

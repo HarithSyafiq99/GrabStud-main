@@ -308,17 +308,34 @@ test(
           [driver2, "driver", "driver2@example.com"],
           [p1, "passenger", "p1@example.com"],
           [p2, "passenger", "p2@example.com"],
-        ])
+        ]) {
+          const registered = await c.request("/api/auth/register", "POST", {
+            ...registration(role, email),
+            status: role === "driver" ? "approved" : "pending",
+          });
+          assert.equal(registered.status, 200);
           assert.equal(
-            (
-              await c.request(
-                "/api/auth/register",
-                "POST",
-                registration(role, email),
-              )
-            ).status,
-            200,
+            registered.data.redirect,
+            role === "passenger" ? "/passenger" : "/pending",
           );
+          const user = (await c.request("/api/auth/me")).data.user;
+          assert.equal(
+            user.status,
+            role === "passenger" ? "approved" : "pending",
+          );
+          assert.equal(user.role, role);
+          if (role === "passenger") assert.equal(user.profile_photo, null);
+        }
+        assert.equal(
+          (
+            await stranger.request("/api/auth/register", "POST", {
+              ...registration("passenger", "no-admin-signup@example.com"),
+              role: "admin",
+              status: "approved",
+            })
+          ).status,
+          400,
+        );
         const page = await fetch(base + "/register");
         const markup = await page.text();
         assert.match(markup, /Phone number \(required\)/);
@@ -326,17 +343,62 @@ test(
       },
     );
     await t.test(
-      "pending accounts cannot request or choose journeys; approval updates existing sessions",
+      "passengers book immediately after signup; drivers wait for admin approval and cannot approve themselves",
       async () => {
-        assert.equal((await request(p1)).status, 403);
+        assert.equal((await p1.request("/api/bookings")).status, 200);
+        const immediate = await request(p1, {
+          from_zone: "Immediate signup pickup",
+          to_zone: "No review dropoff",
+        });
+        assert.equal(immediate.status, 200);
+        await db.execute({
+          sql: "DELETE FROM bookings WHERE id=?",
+          args: [immediate.data.bookingId],
+        });
         assert.equal((await driver.request("/api/bookings")).status, 403);
-        const users = (await admin.request("/api/admin/users?tab=pending")).data
+        assert.equal(
+          (
+            await driver.request("/api/auth/me", "PATCH", {
+              status: "approved",
+            })
+          ).status,
+          400,
+        );
+        const users = (await admin.request("/api/admin/users?tab=all")).data
           .users;
         driverId = users.find((u) => u.email === "driver@example.com").id;
         driver2Id = users.find((u) => u.email === "driver2@example.com").id;
         p1Id = users.find((u) => u.email === "p1@example.com").id;
         p2Id = users.find((u) => u.email === "p2@example.com").id;
-        for (const id of [driverId, driver2Id, p1Id, p2Id])
+        const pendingIds = (
+          await admin.request("/api/admin/users?tab=pending")
+        ).data.users.map((u) => u.id);
+        assert.ok(
+          pendingIds.includes(driverId) && pendingIds.includes(driver2Id),
+        );
+        assert.ok(!pendingIds.includes(p1Id) && !pendingIds.includes(p2Id));
+        assert.equal(
+          (
+            await p1.request("/api/admin/users", "PATCH", {
+              userId: driverId,
+              action: "approve",
+            })
+          ).status,
+          403,
+        );
+        const returningPassenger = client();
+        const login = await returningPassenger.request(
+          "/api/auth/login",
+          "POST",
+          { email: "p1@example.com", password: "TestPass123!" },
+        );
+        assert.equal(login.status, 200);
+        assert.equal(login.data.redirect, "/passenger");
+        assert.equal(
+          (await returningPassenger.request("/api/bookings")).status,
+          200,
+        );
+        for (const id of [driverId, driver2Id])
           assert.equal(
             (
               await admin.request("/api/admin/users", "PATCH", {
@@ -1755,7 +1817,7 @@ test(
           );
         assert.equal(
           (await account.request("/api/auth/me")).data.user.status,
-          "pending",
+          "approved",
         );
         assert.equal(
           (
@@ -2462,13 +2524,8 @@ test(
         );
         const id = (await account.request("/api/auth/me")).data.user.id;
         assert.equal(
-          (
-            await admin.request("/api/admin/users", "PATCH", {
-              userId: id,
-              action: "approve",
-            })
-          ).status,
-          200,
+          (await account.request("/api/auth/me")).data.user.status,
+          "approved",
         );
         await account.request("/api/auth/login", "POST", {
           email,

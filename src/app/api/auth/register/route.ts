@@ -88,11 +88,13 @@ export async function POST(request: Request) {
     const id = newId();
     const now = nowIso();
     const password_hash = await hash(password, 10);
+    const status = role === "passenger" ? "approved" : "pending";
+    const redirect = role === "passenger" ? "/passenger" : "/pending";
 
     await db.execute({
       sql: `INSERT INTO users
             (id, name, email, phone_number, password_hash, student_number, role, status, student_id_doc, license_doc, profile_photo, car_colour, car_type, car_plate, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       args: [
         id,
         name,
@@ -101,6 +103,7 @@ export async function POST(request: Request) {
         password_hash,
         student_number,
         role,
+        status,
         student_id_doc,
         license_doc,
         profile_photo,
@@ -115,7 +118,9 @@ export async function POST(request: Request) {
     await writeAudit(
       id,
       "REGISTER",
-      `${role} ${email} submitted documents and awaits approval`,
+      role === "passenger"
+        ? `passenger ${email} registered with immediate passenger access`
+        : `driver ${email} submitted documents and awaits approval`,
     );
     await createSession({
       id,
@@ -123,7 +128,7 @@ export async function POST(request: Request) {
       email,
       phone_number,
       role,
-      status: "pending",
+      status,
       rejection_reason: null,
       profile_photo,
       car_colour: role === "driver" ? vehicle.car_colour : "",
@@ -133,7 +138,7 @@ export async function POST(request: Request) {
       session_version: 0,
     });
 
-    return NextResponse.json({ ok: true, redirect: "/pending" });
+    return NextResponse.json({ ok: true, redirect });
   } catch (error) {
     console.error(error);
     return jsonError("Registration failed.", 500);

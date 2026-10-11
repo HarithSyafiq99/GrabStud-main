@@ -323,6 +323,75 @@ try {
     deviceScaleFactor: 1,
     mobile: true,
   });
+  await send("Network.deleteCookies", { name: "gs_session", url: base });
+  await send("Page.navigate", { url: base + "/register" });
+  await until(
+    "(() => { const button=document.querySelector('.role-tabs button:nth-child(2)'); if(!button) return false; if(button.getAttribute('aria-pressed')!=='true') button.click(); return button.getAttribute('aria-pressed')==='true'; })()",
+    "interactive driver signup tab",
+  );
+  check(
+    await evaluate(
+      "document.querySelector('.auth-form').textContent.includes('Drivers need admin approval') && document.querySelector('.photo-upload input').getAttribute('aria-label').includes('(required)') && document.querySelectorAll('.upload-zone').length===2",
+    ),
+    "driver signup explains admin approval and requires photo and license",
+  );
+  await click(".role-tabs button:nth-child(1)");
+  await until(
+    "document.querySelector('.role-tabs button:nth-child(1)').getAttribute('aria-pressed')==='true' && document.querySelectorAll('.upload-zone').length===1",
+    "passenger signup tab",
+  );
+  check(
+    await evaluate(
+      "document.querySelector('.auth-form').textContent.includes('Profile photos are optional for passengers') && document.querySelector('.auth-form').textContent.includes('No admin approval is needed') && document.querySelector('.photo-upload input').getAttribute('aria-label').includes('(optional)')",
+    ),
+    "passenger signup clearly explains optional photo and immediate access",
+  );
+  await setInput(
+    '.auth-form input[autocomplete="name"]',
+    "Immediate Passenger",
+  );
+  await setInput(
+    '.auth-form input[type="email"]',
+    "immediate-signup@example.com",
+  );
+  await setInput("#signup-phone", "+60123456788");
+  await setInput('.auth-form input[maxlength="40"]', "IMMEDIATE-SIGNUP");
+  await setInput(
+    '.auth-form input[autocomplete="new-password"]',
+    "SignupTest123!",
+  );
+  await evaluate(
+    "(() => { const data=" +
+      JSON.stringify(photo) +
+      "; const bytes=Uint8Array.from(atob(data.split(',')[1]),c=>c.charCodeAt(0)); const transfer=new DataTransfer(); transfer.items.add(new File([bytes],'student-id.png',{type:'image/png'})); const input=document.querySelector('.upload-zone input'); input.files=transfer.files; input.dispatchEvent(new Event('change',{bubbles:true})); })()",
+  );
+  await until(
+    "document.querySelector('.upload-zone').getAttribute('data-uploaded')==='true' && !document.querySelector('.booking-progress')",
+    "signup student document read",
+  );
+  await click(".auth-form > button.btn-primary");
+  await until(
+    "location.pathname==='/passenger' && document.querySelector('.current-bookings') && !document.querySelector('.booking-progress')",
+    "new passenger enters dashboard immediately",
+  );
+  const signupUser = (
+    await db.execute(
+      "SELECT role,status,profile_photo FROM users WHERE email='immediate-signup@example.com'",
+    )
+  ).rows[0];
+  check(
+    signupUser?.role === "passenger" &&
+      signupUser.status === "approved" &&
+      signupUser.profile_photo === null,
+    "signup without a passenger photo creates an active account and opens the passenger dashboard",
+  );
+  await send("Network.setCookie", {
+    name: "gs_session",
+    value: token,
+    url: base,
+    httpOnly: true,
+    sameSite: "Lax",
+  });
   await db.execute(
     "INSERT INTO bookings (id,driver_id,passenger_id,from_zone,to_zone,departure_at,status,quoted_price,payment_method,arrived_at,created_at,updated_at) VALUES ('stale-arrival','driver','passenger','Previous pickup','Previous destination','2020-01-01T00:00:00Z','accepted',500,'cash','2020-01-01T00:01:00Z','2000-01-01T00:00:00Z','2000-01-01T00:00:00Z')",
   );
